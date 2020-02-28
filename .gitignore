@@ -1,0 +1,66 @@
+﻿.gradle
+/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.class
+catalina.base_IS_UNDEFINED/
+logs/
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+nbproject/private/
+build/
+bin/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+### 通用 ###
+##ignore this file##
+/target/ 
+*/target/
+target/
+.classpath
+.project
+*.class
+.settings 
+*.prefs
+*.component
+*.lst
+ 
+ ##filter databfile、sln file##
+*.mdb  
+*.ldb  
+*.sln    
+##class file##
+*.com  
+*.class  
+*.dll  
+*.exe  
+*.o  
+*.so  
+ 
+# compression file
+*.7z  
+*.dmg  
+*.gz  
+*.iso  
+*.jar  
+*.rar  
+*.tar  
+*.zip  
+*.via
+*.tmp

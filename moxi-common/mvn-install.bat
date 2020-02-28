@@ -1,0 +1,1 @@
+mvn install:install-file -Dfile=./target/moxi-common-0.0.1.jar -DgroupId=gbench.tartarus -DartifactId=moxi-common

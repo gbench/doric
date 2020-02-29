@@ -5499,11 +5499,11 @@ public class LittleTree {
         
         /**
          * 创建一个键值对儿
-         * @param <K1> 主键
-         * @param <V1>
+         * @param <K1> 键类型
+         * @param <V1> 值类型
          * @param k1 键名
-         * @param v1 值
-         * @return 键值对儿
+         * @param v1 键值
+         * @return 键值对儿(k1,v1)
          */
         public static <K1,V1> KVPair<K1,V1> KVP(K1 k1,V1 v1){
             return new KVPair<>(k1,v1);
@@ -8686,7 +8686,7 @@ public class LittleTree {
          *  A:c	B:3	C:6	D:9	E:91 <br>
          *  A:a	B:1	C:10	D:3	E:31 <br>
          *  
-         * @param mapper 元素类型格式化
+         * @param mapper 元素类型格式化函数,类型为， (key:String,value:Object)->new_value
          * @param hh列名序列,若为空则采用EXCEL格式的列名称(0:A,1:B,...),如果列表不够也采用excelname给与填充区别只不过添加了一个前缀"_"
          */
         public default <T> List<IRecord> rows(final BiFunction<String,Object,T> mapper,final List<String>hh) {
@@ -8730,10 +8730,9 @@ public class LittleTree {
          *  A:c B:3 C:6 D:9 E:91 <br>
          *  A:a B:1 C:10    D:3 E:31 <br>
          *  
-         * @param mapper 元素类型格式化
          */
         public default <T> List<IRecord> rows() {
-            return this.rows((s,e)->e+"",this.keys());
+            return this.rows((key,value)->value,this.keys());
         }
         
         /**
@@ -8968,12 +8967,18 @@ public class LittleTree {
          *  
          * 按照列进行展示
          * 对DataFrame进行初始化
-         * @param cell_formatter 元素内容初始化
+         * @param key_formatter 键名内容初始化
+         * @param cell_formatter 键值元素内容初始化
+         * @Return 格式化字符串
          */
-        public default String toString2(final Function<Object,String> cell_formatter) {
+        public default String toString2(
+            final Function<Object,String> key_formatter,
+            final Function<Object,String> cell_formatter) {
+            
            final var builder = new StringBuilder();
            final var final_cell_formatter = cell_formatter!=null?cell_formatter:frt(2);
-           builder.append(this.keys().stream().collect(Collectors.joining("\t"))+"\n");
+           final var final_key_formatter = key_formatter!=null?key_formatter:frt(2);
+           builder.append(this.keys().stream().map(final_key_formatter).collect(Collectors.joining("\t"))+"\n");
            this.rows().forEach(rec->{
                builder.append(rec.values().stream()
                     .map(final_cell_formatter)
@@ -9003,6 +9008,34 @@ public class LittleTree {
          *  
          * 按照列进行展示
          * 对DataFrame进行初始化
+         * @param cell_formatter 元素内容初始化
+         * @Return 格式化字符串
+         */
+        public default String toString2(final Function<Object,String> cell_formatter) {
+            return this.toString2(null,cell_formatter);
+        }
+        
+        /**
+         * DataFrame 类型的数据方法,所谓DataFrame 是指键值对儿中的值为List的IRecord(kvs)<br>
+         * 返回行列表:<br>
+         *  final var dfm = REC( <br>
+         *    "A",L("a","b","c"), // 第一列 <br>
+         *    "B",L(1,2,3), // 第二列 <br>
+         *    "C",A(2,4,6,10),// 第三列 <br>
+         *    "D",REC(0,3,1,6,2,9),// 第四列 <br>
+         *    "E",REC(0,31,1,61,2,91).toMap()// 第五列 <br>
+         *  );// dfm
+         *  
+         *  返回:<br>
+         *  A   B   C   D   E <br>
+         *  a   1   2   3   31 <br>
+         *  b   2   4   6   61 <br>
+         *  c   3   6   9   91 <br>
+         *  a   1   10  3   31 <br>
+         *  
+         * 按照列进行展示
+         * 对DataFrame进行初始化
+         * @Return 格式化字符串
          */
         public default String toString2() {
             return toString2(null);
@@ -9944,8 +9977,17 @@ public class LittleTree {
          * @return IRecord对象
          */
         public static <T> IRecord KVS2REC(final List<KVPair<String,T>> kvs) {
+           return KVS2REC(kvs.stream());
+        }
+        
+        /**
+         *  把一个KVS列表转换成一个IRecord对象,
+         * @param kvs 键值列表
+         * @return IRecord对象
+         */
+        public static <T> IRecord KVS2REC(final Stream<KVPair<String,T>> kvsStream) {
            final IRecord rec = REC();
-           if(kvs!=null)kvs.forEach(kvp->{
+           if(kvsStream!=null)kvsStream.forEach(kvp->{
                rec.add(kvp.key(),kvp.value());
            });
            return rec;
@@ -13975,9 +14017,9 @@ public class LittleTree {
     }
     
     /**
-     *  Key->Value:
-     *  0->t1,1->t1,n->tn-1,...
-     *  NATS(10).map(kvp()).forEach(System.out::println);
+     *  Key->Value:<br>
+     *  0->t1,1->t1,n->tn-1,... <br>
+     *  NATS(10).map(kvp()).forEach(System.out::println);<br>
      * @return 键值列表
      */
     public static <T> Function<T,KVPair<Long,T>> kvp(){

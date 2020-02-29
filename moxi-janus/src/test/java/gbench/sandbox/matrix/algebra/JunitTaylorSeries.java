@@ -86,7 +86,7 @@ public class JunitTaylorSeries extends DataMatrixApp {
         b = V(size,x->cos(x));// 标准函数:beta
         
         final var d = a.minus(b);// 差:difference
-        final var e = d.mapRows(p->REC(p).applyOnValues(
+        final var e = d.mapRows2(p->REC(p).applyOnValues(
             (Double v)->MFT("{0}:{1,number,#.##}",abs(v)>=0.01d ? "数据溢出":"正常",abs(v))
         ));// error
         

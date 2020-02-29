@@ -7,9 +7,8 @@ import static gbench.common.tree.LittleTree.DataFrame.*;
 import static gbench.common.tree.LittleTree.CronTime.*;
 import static gbench.common.tree.LittleTree.IRecord.*;
 import gbench.common.fs.XlsFile.*;
-import gbench.common.fs.XlsFile.Column;
+import gbench.common.fs.XlsFile.DColumn;
 import java.time.LocalDate;
-
 import static gbench.common.tree.LittleTree.*;
 
 public class JunitDatataMatrixAndIRecord extends DataMatrixApp{
@@ -46,17 +45,24 @@ public class JunitDatataMatrixAndIRecord extends DataMatrixApp{
             L(1,2,3,4,5,7,8,9,0),
             L(1,2,3,4)
         );// 数据单元集合
+        
         var mm = new DataMatrix<>(cc,L("A"));
+        
+        // IRecord的类型转换
         println("数据矩阵");
         println(mm);
         
-        var t= mm.mapByRow(IRecord::REC).collect(omc);
+        var mx= mm.mapByRow(IRecord::REC).collect(omc);
         println("record 集合转数据矩阵");
-        println(t);
+        println(mx);
         
-        var rec = t.reduceColumns(Column::getElems,IRecord::REC);
-        println("数据矩阵转Record");
-        println(rec.toString2());
+        var rec_x = mx.reduceRows(DRow::getElems,IRecord::REC);
+        System.out.println("数据矩阵转Record(reduceRows) 产生一个 record:");
+        System.out.println(rec_x.toString2(e->MFT("#{0}",e),frt(2)));
+        
+        var rec_y = mx.reduceColumns(DColumn::getElems,IRecord::REC);
+        println("数据矩阵转Record(reduceColumns):产生一个 record:");
+        println(rec_y.toString2(e->MFT("#{0}",e),frt(2)));
         
     }
 }

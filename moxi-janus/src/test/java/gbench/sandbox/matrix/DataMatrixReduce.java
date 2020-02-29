@@ -6,7 +6,7 @@ import gbench.common.fs.XlsFile.*;
 import gbench.common.tree.LittleTree;
 import gbench.common.tree.LittleTree.IRecord;
 import static gbench.common.tree.LittleTree.IRecord.*;
-import static gbench.common.fs.XlsFile.Column.*;
+import static gbench.common.fs.XlsFile.DColumn.*;
 import static gbench.common.fs.XlsFile.DataMatrix.*;
 import static java.util.Arrays.*;
 

@@ -12987,7 +12987,6 @@ public class LittleTree {
         return root;
     }
 
-
     /**
      * 遍历树形结构
      * @param root 根节点
@@ -13026,7 +13025,6 @@ public class LittleTree {
         BiConsumerThrows<U,Integer> cs) throws Exception{
         traverse_throws2(root,cs,0);
     }
-
 
     /**
      * 遍历树形结构
@@ -13428,7 +13426,6 @@ public class LittleTree {
         if(pfilter==null) return MAP(coll.stream(),mapper);
         return coll.stream().filter(pfilter).map(mapper).collect(Collectors.toList());
     }
-
 
     /**
      * 对集合数据进行分组

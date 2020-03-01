@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.BinaryOperator;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -14,8 +15,8 @@ import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import gbench.common.fs.XlsFile.DataMatrix;
+import gbench.common.fs.XlsFile.TypeU;
 import gbench.common.tree.LittleTree.IRecord;
-
 import static gbench.common.tree.LittleTree.IRecord.*;
 import static gbench.common.tree.LittleTree.*;
 import static gbench.common.tree.LittleTree.IRecord.REC;
@@ -553,6 +554,26 @@ public class DataMatrixApp {
     public static <T> DataMatrix<T> V(T ...oo){
         return VT(oo);
     }
+    
+    /**
+     * 把一个矩阵按照列 顺序拼接成一个列向量
+     * 生成一个T类型的向量:VT 向量的别名
+     * @param <T> 元素类型
+     * @return DataMatrix<T>
+     */
+    public static <T> DataMatrix<T> V(DataMatrix<T> mm){
+        return VT(mm.flc2());
+    }
+    
+    /**
+     * 把一个矩阵按照行 顺序拼接成一个列向量
+     * 生成一个T类型的向量:VT 向量的别名
+     * @param <T> 元素类型
+     * @return DataMatrix<T>
+     */
+    public static <T> DataMatrix<T> V2(DataMatrix<T> mm){
+        return VT(mm.flc());
+    }
 
     /**
      * 生成一个学姐级数向量
@@ -672,6 +693,7 @@ public class DataMatrixApp {
      * 对角矩阵
      * @param <T> 元素类型
      * @param oo 对角数据
+     * @param zero 零的填充数据
      * @return 以oo为元素的对角矩阵
      */
     @SuppressWarnings("unchecked")
@@ -681,12 +703,28 @@ public class DataMatrixApp {
         final var size = oo.length;
         Function<Integer,IRecord> line = i->{
             T[] tt = RPTA(size,zero);
-            tt[i]=oo[i];
+            tt[i]= TypeU.coerce(oo[i],clazz);
             return A2REC(tt);
         };
         
         return Stream.iterate(0,i->i<size,i->i+1).map(line).collect(tmc(clazz));
     }
+    
+    /** 对角矩阵
+    * @param <T> 元素类型
+    * @param oo 对角数据
+    * @return 以oo为元素的对角矩阵
+    */
+   @SuppressWarnings("unchecked")
+   public static <T> DataMatrix<T> diag(final T[] oo){
+       T zero = null;
+       if(oo[0] instanceof Double) zero = (T)(Object)0d;
+       else if(oo[0] instanceof Integer) zero = (T)(Object)0;
+       else if(oo[0] instanceof Long) zero = (T)(Object)0l;
+       else if(oo[0] instanceof Float) zero = (T)(Object)0f;
+       else if(oo[0] instanceof String) zero = (T)(Object)"";
+       return diag(oo,zero);
+   }
     
     /**
      * 对角矩阵
@@ -1096,6 +1134,38 @@ public class DataMatrixApp {
     public static <T> DataMatrix<T> t(DataMatrix<T> mx){
         return transpose(mx);
     }
+    
+    /**
+     * 款速生成一个列表
+     * @param <T>
+     * @param tt
+     * @return
+     */
+    public static <T> List<T> l(@SuppressWarnings("unchecked") final T ...tt) {
+        return L(tt);
+    }
+    
+    /**
+     * 款速生成一个数组
+     * @param <T>
+     * @param tt
+     * @return
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> T[] a(final T ...tt) {
+        return l(tt).toArray(n->(T[])Array.newInstance(
+            Stream.of(tt).map(e->e!=null).map(e->(Class<T>)e.getClass()).findFirst().get()
+            , n));
+    }
+    
+    /**
+     * 生成数据记录
+     * @param ooo key0,value0, key1,value1, key2,value2,....
+     * @return 数据记录
+     */
+    public static IRecord rec(final Object ... ooo) {
+        return REC(ooo);
+    }
 
     /**
      * 输出函数的会回调函数
@@ -1118,4 +1188,44 @@ public class DataMatrixApp {
         println_callback.accept(lines);
         return lines;
     }
+    
+    /**
+     * 一元函数的别名
+     * @author gbench
+     *
+     */
+    public interface Fx extends Function<Object,Object>{} // 一元函数
+    
+    /**
+     *  二元函数的别名
+     * @author gbench
+     *
+     */
+    public interface Fxy extends BiFunction<Object,Object,Object>{} // 二元函数
+    
+    public static Function<Function<Object,Object>,Fx> f2fx = (f)->(Fx) (x)->f.apply(x);
+    public static Function<BiFunction<Object,Object,Object>,Fxy> f2fxy = (f)->(Fxy) (x,y)->f.apply(x,y);
+    
+    /**
+     *  函数复合
+     * @param <T>
+     * @param <U>
+     * @param <V>
+     * @param g
+     * @param f
+     * @return Fx
+     */
+    public static <T,U,V> Function<T,V> compose(Function<T,U> g,Function<U,V> f) {
+        return f.compose(g);
+    }
+    
+    /**
+     * 函数流的序列复合
+     * @param ff 函数数列
+     * @return Fx
+     */
+    public static Fx ff2fx(Stream<Function<Object,Object>> ff) {
+        return ff.reduce(Function::compose).map(f2fx).get();
+    }
+    
 }

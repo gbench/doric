@@ -7,6 +7,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Array;
+import java.math.BigDecimal;
 import java.text.DecimalFormat;
 import java.text.MessageFormat;
 import java.text.ParseException;
@@ -1315,6 +1316,15 @@ public class XlsFile {
                 String str = String.valueOf(value);
                 str = str.replaceAll("\\..*$","");
                 obj = Integer.parseInt(str);
+            }else if(type == BigDecimal.class){
+                if(value instanceof BigDecimal)return (T)value;
+                if(value instanceof Date){
+                    value = date2long((Date)value).intValue();
+                    return (T)value;
+                }
+                String str = String.valueOf(value);
+                str = str.replaceAll("\\..*$","");
+                obj = Integer.parseInt(str);
             }else if(type == String.class){
                 if(value instanceof String)return (T)value;
                 obj = String.valueOf(value);
@@ -1806,7 +1816,8 @@ public class XlsFile {
                         if(blanks_left>0) { // 尚有空白没有填充，此时需要采用下标索引的循环遍历的方法给与将空白补填
                             var entryitr = rowrec.entrySet().iterator(); // 提取行遍历器
                             var j = rowrec.size();// 承接前次遍历结果
-                            while( blanks_left-- >0 ){// blanks_left>0表示尚未填满,要补填完整
+                            // j>0 确保rowrec中有数据：否则rowrec是个空记录，则不予进行补填。
+                            if(j>0)while( blanks_left-- >0 ){// blanks_left>0表示尚未填满,要补填完整
                                 if(!entryitr.hasNext())entryitr = rowrec.entrySet().iterator();// 取得可用的迭代器
                                 cells[i][j++]= entryitr.next().getValue(); // 提取位置的数据值
                             }//while blanks_left-->0
@@ -1859,7 +1870,8 @@ public class XlsFile {
                         if(blanks_left>0) {// 尚有空白没有填充，此时需要采用下标索引的循环遍历的方法给与将空白补填
                             var entryitr = column.iterator();// 创建列遍历迭代器
                             var i = column.size();// 行号
-                            while( blanks_left-- >0 ){// 尚未填满就需要补充
+                            // i>0 确保column中有数据：否则column是个空记录，则不予进行补填。
+                            if(i>0)while( blanks_left-- >0 ){// 尚未填满就需要补充
                                 if(!entryitr.hasNext())entryitr = column.iterator();// 取得可用的迭代器
                                 cells[i++][j]= entryitr.next(); // 提取位置的数据值
                             }//while blanks_left-->0
@@ -1930,403 +1942,127 @@ public class XlsFile {
             }
 
             /**
-             * 矩阵乘法
-             * @param <U> 中间结果计算类型
-             * @param mm 右乘矩阵
-             * @param hh 生成矩阵的列名序列, 用逗号分隔
-             * @return DataMatrix<T> 的结果矩阵
+             * 矩阵对象
+             * @param <U> creator 的结果类型
+             * @param creator 矩阵生成器
+             * @return 矩阵对象
+             */
+            public <U> U cast(final Function<DataMatrix<T>,U> creator) {
+                return creator.apply(this);
+            }
+
+            /**
+             * 强制类型转换
+             * @param cls 目标类类型
+             * @return U类型的DataMatrix<U>
              */
             @SuppressWarnings("unchecked")
-            public <U extends Number> DataMatrix<T> mmult(final DataMatrix<T> mm,final List<String> hh) {
-                
-                if (!(cells[0][0] instanceof Number) || !(mm.cells[0][0] instanceof Number))
+            public <U> DataMatrix<U> corece(final Class<U> cls){
+                T[][] cc = this.cells;
+                try {
+                    final U[][] dd = (U[][])cc;// 强制类型转换
+                    return new DataMatrix<U>(dd,this.header());
+                }catch(Exception e) {
                     return null;
-                final T[][] tt = (T[][]) DataMatrix.mmult((U[][]) this.cells, (U[][]) mm.cells);   
-                
-                return new DataMatrix<T>(tt, hh == null ? mm.header() : hh);
-            }
-            
-            /**
-             * 矩阵乘法
-             * @param mm 右乘矩阵
-             * @param hh 生成矩阵的列名序列, 用逗号分隔
-             * @return DataMatrix<T>
-             */
-            public DataMatrix<T> mmult(final DataMatrix<T> mm,final String hh) {
-                
-                return mmult(mm,hh==null?null:Arrays.asList(hh.split("[,\\\\/]+")));
+                }
             }
 
             /**
-             * 矩阵乘法
-             * @param mm 右乘矩阵
-             * @param hh 生成矩阵的列名序列, 用逗号分隔
-             * @return DataMatrix<T>
-             */
-            public DataMatrix<T> mmult(final DataMatrix<T> mm,final String[] hh) {
-                
-                return mmult(mm,hh==null?null:Arrays.asList(hh));
-            }
-
-            /**
-             * 矩阵乘法
-             * @param m1 右乘矩阵
-             * @return DataMatrix<T>
-             */
-            public DataMatrix<T> mmult(final DataMatrix<T> m1) {
-               return mmult(m1,(List<String>)null);
-            }
-
-            /**
-             * 使用示例:需要结合DataMatrix的V与tmc 和 LittleTree的IRecord,从这个函数可以看出 
-             * DataMatrix 与 IRecord 既是可以亲密无间的，又可以是独立存在的。 <br>
-             * <br>
-             *  final var alpha = V(10, n -> ((Function &lt; Object,Object &gt;) e -> n + ":" + e)); //函数向量 <br>
-             *  final var beta = alpha.transpose(); // //函数向量 <br>
-             *  final var ff = alpha.mmult2(beta, Function::compose, e->e, Function::compose);// 矩阵式的函数组合。 <br>
-             *  final var xx = ff.mapByRow(IRecord::REC).map(e -> { <br>
-             *  &nbsp;&nbsp; @SuppressWarnings("unchecked")<br>
-             *  &nbsp;&nbsp; final var r = e.applyOnValues(f->((Function&lt;Object, Object&gt;)f).apply(REC())); <br>
-             *  &nbsp;&nbsp; System.out.println(r);<br>
-             *  &nbsp;&nbsp; return REC(r);<br>
-             *  }).collect(tmc(IRecord.class));<br>
-             *  System.out.println(xx); <br>
-             * <br>
-             *  
-             * 通用的:矩阵乘法
-             * @param <T> 左矩阵的元素类型
-             * @param <U> 右矩阵的元素类型
-             * @param <V> 结果矩阵的元素类型
-             * @param mm 右矩阵
-             * @param product_operator 乘法算子
-             * @param identity 零元元素
-             * @param op 累加元素运算
-             * @param hh 生成矩阵的列名序列, 用逗号分隔
-             * @return 以V为元素的矩阵：行数与与this 相同，列数与 mm的列数相同
-             */
-            public <U,V> DataMatrix<V> mmult2(final DataMatrix<U> mm, final BiFunction<T,U,V> product_operator, 
-                final V identity, final BinaryOperator<V> op,final List<String> hh) {
-                
-                final V[][] vv= DataMatrix.mmult2(this.cells, mm.cells, product_operator, identity, op);
-                return new DataMatrix<V>(vv,hh==null?mm.header():hh);
-            }
-
-            /**
-             * 使用示例:需要结合DataMatrix的V与tmc 和 LittleTree的IRecord,从这个函数可以看出 
-             * DataMatrix 与 IRecord 既是可以亲密无间的，又可以是独立存在的。 <br>
-             * <br>
-             *  final var alpha = V(10, n -> ((Function &lt; Object,Object &gt;) e -> n + ":" + e)); //函数向量 <br>
-             *  final var beta = alpha.transpose(); // //函数向量 <br>
-             *  final var ff = alpha.mmult2(beta, Function::compose, e->e, Function::compose);// 矩阵式的函数组合。 <br>
-             *  final var xx = ff.mapByRow(IRecord::REC).map(e -> { <br>
-             *  &nbsp;&nbsp; @SuppressWarnings("unchecked")<br>
-             *  &nbsp;&nbsp; final var r = e.applyOnValues(f->((Function&lt;Object, Object&gt;)f).apply(REC())); <br>
-             *  &nbsp;&nbsp; System.out.println(r);<br>
-             *  &nbsp;&nbsp; return REC(r);<br>
-             *  }).collect(tmc(IRecord.class));<br>
-             *  System.out.println(xx); <br>
-             * <br>
-             * 通用的:矩阵乘法
-             * @param <T> 左矩阵的元素类型
-             * @param <U> 右矩阵的元素类型
-             * @param <V> 结果矩阵的元素类型
-             * @param mm 右矩阵
-             * @param product_operator 乘法算子
-             * @param identity 零元元素
-             * @param op 累加元素运算
-             * @return 以V为元素的矩阵：行数与与this 相同，列数与 mm的列数相同
-             */
-            public <U,V> DataMatrix<V> mmult2(final DataMatrix<U> mm, final BiFunction<T,U,V> product_operator, 
-                final V identity,BinaryOperator<V> op) {
-                
-                return this.mmult2(mm, product_operator, identity, op, null);
-            }
-            
-            /**
-             * 使用示例:需要结合DataMatrix的V与tmc 和 LittleTree的IRecord,从这个函数可以看出 
-             * DataMatrix 与 IRecord 既是可以亲密无间的，又可以是独立存在的。 <br>
-             * <br>
-             *  final var alpha = V(10, n -> ((Function &lt; Object,Object &gt;) e -> n + ":" + e)); //函数向量 <br>
-             *  final var beta = alpha.transpose(); // //函数向量 <br>
-             *  final var ff = alpha.mmult2(beta, Function::compose, e->e, Function::compose);// 矩阵式的函数组合。 <br>
-             *  final var xx = ff.mapByRow(IRecord::REC).map(e -> { <br>
-             *  &nbsp;&nbsp; @SuppressWarnings("unchecked")<br>
-             *  &nbsp;&nbsp; final var r = e.applyOnValues(f->((Function&lt;Object, Object&gt;)f).apply(REC())); <br>
-             *  &nbsp;&nbsp; System.out.println(r);<br>
-             *  &nbsp;&nbsp; return REC(r);<br>
-             *  }).collect(tmc(IRecord.class));<br>
-             *  System.out.println(xx); <br>
-             * <br>
-             * 
-             * 通用的:矩阵乘法
-             * @param <T> 左矩阵的元素类型
-             * @param <U> 右矩阵的元素类型
-             * @param <V> 结果矩阵的元素类型
-             * @param mm 右矩阵
-             * @param product_operator 乘法算子
-             * @param identity 零元元素
-             * @param op 累加元素运算
-             * @param hh 生成矩阵的列名序列, 用逗号分隔
-             * @return 以V为元素的矩阵：行数与与this 相同，列数与 mm的列数相同
-             */
-            public <U,V> DataMatrix<V> mmult2(final U[][] mm, final BiFunction<T,U,V> product_operator,
-                final V identity,BinaryOperator<V> op, final List<String> hh) {
-                
-                final V[][] vv= DataMatrix.mmult2(this.cells, mm, product_operator, identity, op);
-                
-                return new DataMatrix<V>(vv,hh==null?this.header():hh);
-            }
-            
-            /**
-             * 使用示例:需要结合DataMatrix的V与tmc 和 LittleTree的IRecord,从这个函数可以看出 
-             * DataMatrix 与 IRecord 既是可以亲密无间的，又可以是独立存在的。 <br>
-             * <br>
-             *  final var alpha = V(10, n -> ((Function &lt; Object,Object &gt;) e -> n + ":" + e)); //函数向量 <br>
-             *  final var beta = alpha.transpose(); // //函数向量 <br>
-             *  final var ff = alpha.mmult2(beta, Function::compose, e->e, Function::compose);// 矩阵式的函数组合。 <br>
-             *  final var xx = ff.mapByRow(IRecord::REC).map(e -> { <br>
-             *  &nbsp;&nbsp; @SuppressWarnings("unchecked")<br>
-             *  &nbsp;&nbsp; final var r = e.applyOnValues(f->((Function&lt;Object, Object&gt;)f).apply(REC())); <br>
-             *  &nbsp;&nbsp; System.out.println(r);<br>
-             *  &nbsp;&nbsp; return REC(r);<br>
-             *  }).collect(tmc(IRecord.class));<br>
-             *  System.out.println(xx); <br>
-             * <br>
-             * 
-             * 通用的:矩阵乘法
-             * @param <T> 左矩阵的元素类型
-             * @param <U> 右矩阵的元素类型
-             * @param <V> 结果矩阵的元素类型
-             * @param mm 右矩阵
-             * @param product_operator 乘法算子
-             * @param identity 零元元素
-             * @param op 累加元素运算
-             * @return 以V为元素的矩阵：行数与与this 相同，列数与 mm的列数相同
-             */
-            public <U,V> DataMatrix<V> mmult2(final U[][] mm, final BiFunction<T,U,V> product_operator,
-                final V identity,BinaryOperator<V> op) {
-                
-                return this.mmult2(mm, product_operator, identity, op);
-            }
-            
-            /**
-             * 矩阵乘法
-             * 
-             * 返回矩阵的表头默认使用ruu的表头
-             * 
-             * @param <T> 左矩阵的元素类型
-             * @param <U> 右矩阵的元素类型
-             * @param <V> 中间结果矩阵的元素类型
-             * @param <O> 最终结果矩阵的元素类型
-             * @param ltt 左边的T类型矩阵
-             * @param ruu 右边的U类型矩阵
-             * @param product_operator T类型与U类型的向V类型进行映射的二元函数 (t,u)->v, 
-             * @param reducer V类型集合向O类型元素进行映射的多元函数 (...vvv)->o
-             * 
-             * @return O 类型的矩阵
-             */
-            public <U,V,O> DataMatrix<O> mmult2(final DataMatrix<U>ruu, final BiFunction<T,U,V> product_operator,
-                final Function<Stream<V>,O>reducer){
-                
-                if(ruu==null) {
-                    System.err.println("不能对空矩阵做乘法运算");
-                    return null;
-                }
-                
-                final var _ltt = this.getCells();
-                final var _ruu = ruu.getCells();
-                final var _mm = mmult2(_ltt,_ruu,product_operator,reducer);
-                
-                return new DataMatrix<>(_mm);
-            }
-            
-            /**
-             * 矩阵乘法
-             * 
-             * @param <T> 左矩阵的元素类型
-             * @param <U> 右矩阵的元素类型
-             * @param <V> 中间结果矩阵的元素类型
-             * @param <O> 最终结果矩阵的元素类型
-             * @param ltt 左边的T类型矩阵
-             * @param ruu 右边的U类型矩阵
-             * @param product_operator T类型与U类型的向V类型进行映射的二元函数 (t,u)->v, 
-             * @param reducer V类型集合向O类型元素进行映射的多元函数 (...vvv)->o
-             * @param hh 返回矩阵的表头 hh 结果矩阵的列头名序列,或者叫做表头,当null时候默认使用ruu的表头
-             * @return O 类型的矩阵
-             */
-            public <U,V,O> DataMatrix<O> mmult2(final DataMatrix<U> ruu, final BiFunction<T,U,V> product_operator,
-                final Function<Stream<V>,O>reducer,final List<String> hh){
-                
-                if(ruu==null) {
-                    System.err.println("不能对空矩阵做乘法运算");
-                    return null;
-                }
-                
-                final var _ltt = this.getCells();
-                final var _ruu = ruu.getCells();
-                final var _mm = mmult2(_ltt,_ruu,product_operator,reducer);
-                
-                return new DataMatrix<>(_mm).setHeader(hh==null ?ruu.header() :hh);
-            }
-            
-            /**
-             * 矩阵乘法
-             * 
-             * @param <T> 左矩阵的元素类型
-             * @param <U> 右矩阵的元素类型
-             * @param <V> 中间结果矩阵的元素类型
-             * @param <O> 最终结果矩阵的元素类型
-             * @param ltt 左边的T类型矩阵
-             * @param ruu 右边的U类型矩阵
-             * @param product_operator T类型与U类型的向V类型进行映射的二元函数 (t,u)->v, 
-             * @param reducer V类型集合向O类型元素进行映射的多元函数 (...vvv)->o
-             * @param hh 返回矩阵的表头 hh 结果矩阵的列头名序列,或者叫做表头,当null时候默认使用ruu的表头
-             * @return O 类型的矩阵
-             */
-            public <U,V,O> DataMatrix<O> mmult2(final DataMatrix<T>ltt, final DataMatrix<U> ruu,
-                final BiFunction<T,U,V> product_operator, final Function<Stream<V>,O>reducer, final List<String> hh){
-                
-                if(ltt==null||ruu==null) {
-                    System.err.println("不能对空矩阵做乘法运算");
-                    return null;
-                }
-                
-                final var _ltt = ltt.getCells();
-                final var _ruu = ruu.getCells();
-                final var _mm = mmult2(_ltt,_ruu,product_operator,reducer);
-                
-                return new DataMatrix<>(_mm).setHeader(hh==null ?ruu.header() :hh);
-            }
-            
-            /**
-             * 矩阵乘法:列表类型的参数聚合reducer
-             * 
-             * 返回矩阵的表头默认使用ruu的表头
-             * 
-             * @param <T> 左矩阵的元素类型
-             * @param <U> 右矩阵的元素类型
-             * @param <V> 中间结果矩阵的元素类型
-             * @param <O> 最终结果矩阵的元素类型
-             * @param ltt 左边的T类型矩阵
-             * @param ruu 右边的U类型矩阵
-             * @param product_operator T类型与U类型的向V类型进行映射的二元函数 (t,u)->v, 
-             * @param reducer V类型集合向O类型元素进行映射的多元函数 (...vvv)->o
-             * 
-             * @return O 类型的矩阵
-             */
-            public <U,V,O> DataMatrix<O> lmmult2(final DataMatrix<U>ruu, final BiFunction<T,U,V> product_operator,
-                final Function<List<V>,O>reducer){
-                
-                if(ruu==null) {
-                    System.err.println("不能对空矩阵做乘法运算");
-                    return null;
-                }
-                
-                final var _ltt = this.getCells();
-                final var _ruu = ruu.getCells();
-                final var _mm = mmult2(_ltt,_ruu,product_operator,
-                    stream->reducer.apply(stream.collect(Collectors.toList())));
-                
-                return new DataMatrix<>(_mm);
-            }
-
-            /**
-             * 矩阵乘法:列表类型的参数聚合reducer:列表类型的参数聚合reducer
-             * 
-             * @param <T> 左矩阵的元素类型
-             * @param <U> 右矩阵的元素类型
-             * @param <V> 中间结果矩阵的元素类型
-             * @param <O> 最终结果矩阵的元素类型
-             * @param ltt 左边的T类型矩阵
-             * @param ruu 右边的U类型矩阵
-             * @param product_operator T类型与U类型的向V类型进行映射的二元函数 (t,u)->v, 
-             * @param reducer V类型集合向O类型元素进行映射的多元函数 (...vvv)->o
-             * @param hh 返回矩阵的表头 hh 结果矩阵的列头名序列,或者叫做表头,当null时候默认使用ruu的表头
-             * @return O 类型的矩阵
-             */
-            public <U,V,O> DataMatrix<O> lmmult2(final DataMatrix<U> ruu, final BiFunction<T,U,V> product_operator,
-                final Function<List<V>,O>reducer,final List<String> hh){
-                
-                if(ruu==null) {
-                    System.err.println("不能对空矩阵做乘法运算");
-                    return null;
-                }
-                
-                final var _ltt = this.getCells();
-                final var _ruu = ruu.getCells();
-                final var _mm = mmult2(_ltt,_ruu,product_operator,
-                    stream->reducer.apply(stream.collect(Collectors.toList())));
-                
-                return new DataMatrix<>(_mm).setHeader(hh==null ?ruu.header() :hh);
-            }
-
-            /**
-             * 矩阵乘法
-             * 
-             * @param <T> 左矩阵的元素类型
-             * @param <U> 右矩阵的元素类型
-             * @param <V> 中间结果矩阵的元素类型
-             * @param <O> 最终结果矩阵的元素类型
-             * @param ltt 左边的T类型矩阵
-             * @param ruu 右边的U类型矩阵
-             * @param product_operator T类型与U类型的向V类型进行映射的二元函数 (t,u)->v, 
-             * @param reducer V类型集合向O类型元素进行映射的多元函数 (...vvv)->o
-             * @param hh 返回矩阵的表头 hh 结果矩阵的列头名序列,或者叫做表头,当null时候默认使用ruu的表头
-             * @return O 类型的矩阵
-             */
-            public <U,V,O> DataMatrix<O> lmmult2(final DataMatrix<T>ltt, final DataMatrix<U> ruu,
-                final BiFunction<T,U,V> product_operator, final Function<List<V>,O>reducer, final List<String> hh){
-                
-                if(ltt==null||ruu==null) {
-                    System.err.println("不能对空矩阵做乘法运算");
-                    return null;
-                }
-                
-                final var _ltt = ltt.getCells();
-                final var _ruu = ruu.getCells();
-                final var _mm = mmult2(_ltt,_ruu,product_operator,
-                    stream->reducer.apply(stream.collect(Collectors.toList())));
-                
-                return new DataMatrix<>(_mm).setHeader(hh==null ?ruu.header() :hh);
-            }
-            
-            /**
-             * 协方差矩阵
-             * @return 协方差矩阵
+             * 类型装换
+             * @param corecer 类型变换函数
+             * @return 类型变换
              */
             @SuppressWarnings("unchecked")
-            public DataMatrix<T> cov(){
-                final var shape = this.shape();
-                final var eXY = this.tp().mmult(this).div((T)shape._1());
-                final var eX = this.mapColumns(col->COL((T)col.mean()));
-                final var eXeY = eX.tp().mmult(eX);
-                
-                return eXY.minus(eXeY);
+            public <U> DataMatrix<U> corece(final Function<T,U>corecer){
+                T[][] cc = this.cells;
+                try { 
+                    final int m = this.height();
+                    final int n = this.width();
+                    final List<U> ulist = Arrays.stream(cc).flatMap(Arrays::stream).map(corecer)
+                        .collect(Collectors.toList());// 找到一个非空的数据类型
+                    final Optional<Class<U>> opt = ulist.stream().filter(e->e!=null)
+                        .findFirst().map(e->(Class<U>)e.getClass()); // 提取费控的类型
+                    final Class<U> cls = opt.orElseGet(()->(Class<U>)(Object)Object.class);
+                    final U[][] uu = (U[][])Array.newInstance(cls, m,n);
+                    final Iterator<U> itr = ulist.iterator();
+                    for(int i=0;i<m;i++) for(int j=0;j<n;j++) uu[i][j]=itr.hasNext()?itr.next():null;
+                    
+                    return new DataMatrix<U>(uu,this.header());
+                }catch(Exception e) {
+                    return null;
+                }
             }
-            
+
             /**
-             * 协方差矩阵
-             * @return 协方差矩阵
+             * 增加数据预处理函数，只改变数据内容并改变数据形状shape:比如 无效非法值，缺失值，数字格式化等功能。
+             * @param mapper 行数据映射 LinkedHashMap<String,T>的结构, key->value 
              */
-            @SuppressWarnings("unchecked")
-            public DataMatrix<T> cor(){
-                final var sigma = this.mapColumns(col->COL((T)col.std_p()));// 标准差向量
-                return this.cov().div(sigma.tp().mmult(sigma));
+            public DataMatrix<T> preProcess(final Consumer<T[]> handler) {
+                for(int i=0;i<this.height();i++)handler.accept(cells[i]);
+                return this;
             }
-            
+
             /**
-             * 矩阵乘法
+             * 获得第i行的第key 列
+             * @param i 行号，从0开始
+             * @param key 列名
+             * @return Integer (i,key) 所标识的数据元素
+             */
+            public Integer integer(final int i,final String key) {
+                final T t = this.get(i, key);
+                final String s = t+"";
+                if(t==null)return null;
+                final String ints = s.replaceFirst("\\.\\s*[\\d\\s]+$", "");// 去除小数后的值
+                return Integer.parseInt(ints);
+            }
+
+            /**
+             * 获得第i行的第key 列
+             * @param i 行号，从0开始
+             * @param key 列名
+             * @return long (i,key) 所标识的数据元素
+             */
+            public long lng(final int i,final String key) {
+                final T t = this.get(i, key);
+                final String s = t+"";
+                final String ints = s.replaceFirst("\\.\\s*[\\d\\s]+$", "");// 去除小数后的值
+                return Long.parseLong(ints);
+            }
+
+            /**
+             * 提取(i,key)之间的元素
              * 
-             * @param <U> 数据类型：编译辅助类。
-             * @param m1 右乘矩阵
-             * @param hh 生成矩阵的列名
-             * @return DataMatrix<T>
+             * @param i 航索引从0喀什
+             * @param key 列名
+             * @return double (i,key) 所标识的数据元素
              */
-            @SuppressWarnings("unchecked")
-            public <U extends Number> T det(){
-               return (T)DataMatrix.det((U[][])this.cells);
+            public double dbl(final int i,final String key) {
+                T t = this.get(i, key);
+                final String s = t+"";
+                return Double.parseDouble(s);
             }
-            
+
+            /**
+             * 获取 列名key所对应列索引
+             * @param key 列名
+             * @return 列号索引
+             */
+            public Integer idx(final String key) {
+                return km.get(key);
+            }
+
+            /**
+             * 这个一般用于：当 DataMatrix为一个列向量（n*1）的时候,提取数据元素。<br>
+             * 返回i行的一个元素 ,若是列向量则为该列向量的第i个元素<br> 
+             * @param i 行号：从0开始
+             * @return T 每一行的第一个元素。
+             */
+            public T get(final int i) {
+                T [] t = this.row(i);
+                if(t ==null) return null;
+                return t.length<1?null:t[0];
+            }
+
             /**
              * 提取 (i,j)位置的元素
              * 
@@ -2342,21 +2078,526 @@ public class XlsFile {
             }
             
             /**
+             *  获取单元格内容
+             *  @param i 行名
+             *  @param key 列名
+             *  @return T (i,key) 所标识的数据元素
+             */
+            public T get(final int i,final String key) {
+                if(key==null)return null;
+                final Integer j = idx(key.toUpperCase());
+                if(j==null)return null;
+                return cells[i][j];
+            }
+
+            /**
+             * 根据地址提取单元格中的数据：一个DataCell 就是一个对矩阵数据的数据单元的引用。
+             * @param addr excel 格式的cell的名称/地址。比如A2代表2行1列。相当于索引的(1,0),或者是 用 “/” 或是 “，” 
+             * 分割出来的两个数字。比如 2,3就对应EXCEL的C2命名
+             * @return 指定单元格里面的数据:返回的结果的DataCell 类型的数据。
+             */
+            public DataCell<T> getDataCell(final String addr) {
+                return new DataCell<T>(addr,this.cells);
+            }
+
+            /**
+             * 提取 addr 所标识区域中的数据
+             * @param addr excel 格式的cell的名称/地址。比如A2代表2行1列。相当于索引的(1,0),或者是 用 “/” 或是 “，” 
+             * 分割出来的两个数字。比如 2,3就对应EXCEL的C2命名
+             * @return addr 所标识区域中的数据：
+             */
+            public T get(final String addr) {
+                return this.getDataCell(addr).get();
+            }
+
+            /**
+             * 获取Cell的类型信息:默认类型为Object.class
+             * @return Cell的类型信息,即T的Class对象
+             */
+            @SuppressWarnings("unchecked")
+            public Class<T> getCellClass(){
+                return DataMatrix.getGenericClass(cells,(Class<T>)Object.class);
+            }
+
+            /**
+             * 数据矩阵的cells二维数组
+             * @return 数据矩阵的cells二维数组
+             */
+            public T[][] getCells() {
+                return cells;
+            }
+
+            /**
+             * 需要注意与cell系列方法的区别：cell返回的MatrixCell对象，而getCell返回的是数据元素
+             * 取货  (i,j)位置的元素
+             * @param i 行号索引从0开始
+             * @param j 列号索引从0开始
+             * @return  (i,j)位置的元素 T类型的元素。
+             */
+            public T getCell(int i,int j) {
+                return cells[i][j];
+            }
+
+            /**
+             * 行顺序的cells一维序列
+             * @return 行顺序的cells一维序列
+             */
+            @SuppressWarnings("unchecked")
+            public T[] getFlatCells() {
+               final Stream<T> tts =  Arrays.stream(this.cells).flatMap(Arrays::stream);
+               return tts.toArray(n->(T[])Array.newInstance(this.getCellClass(),n));
+            }
+            
+            /**
+             * 行顺序的cells一维序列
+             * @return 行顺序的cells一维序列
+             */
+            public T[] flc() {
+               return getFlatCells();
+            }
+
+            /**
+             * 列顺序的cells一维序列
+             * @return 列顺序的cells一维序列
+             */
+            @SuppressWarnings("unchecked")
+            public T[] getFlatCells2() {
+               final Stream<T> tts =  Arrays.stream(DataMatrix.transpose(this.cells)).flatMap(Arrays::stream);
+               return tts.toArray(n->(T[])Array.newInstance(this.getCellClass(),n));
+            }
+            
+            /**
+             * 列顺序的cells一维序列
+             * @return 列顺序的cells一维序列
+             */
+            public T[] flc2() {
+               return getFlatCells2();
+            }
+
+            /**
+             * 提取出列对象
+             * @param name
+             * @return 提取列对象
+             */
+            public DColumn<T> getColumn(final String name){
+                return DColumn.COLUMN(name, this.lcol(name));
+            }
+
+            /**
+             * 提取出列对象
+             * @param name
+             * @return 提取列对象
+             */
+            public List<DColumn<T>> getColumns(){
+                return this.header().stream().map(name->DColumn.COLUMN(name,this.lcol(name))).collect(Collectors.toList());
+            }
+
+            /**
+             * 提取出列对象
+             * @param j 列序号，从0开始
+             * @return 提取列对象
+             */
+            public DColumn<T> getColumn(final int j){
+                if(this.header()==null || this.header().size()<j)return null;
+                return DColumn.COLUMN(this.header().get(j), this.lcol(j));
+            }
+
+            /**
+             * 提取根据列索引提取列名
+             * @param j 列索引 从0开始
+             * @return j 列索引所对应的列名 
+             */
+            public String getHeaderByColumnIndex(int j) {
+                return this.header().get(j);
+            }
+
+            /**
+             * 获得子集合
+             * @param str excel 格式的cell的名称 1a:3h或者1/1:9/8
+             * @return
+             */
+            public DataMatrix<T> range(final String str) {
+                if(str == null || !str.contains(":")) {
+                    return null;
+                }
+                
+                Function<String,Integer[]> parse = cname->{
+                    cname=cname.trim();
+                    final Pattern p = Pattern.compile("(\\d+)[,/\\s]*([^,/\\s]+)");
+                    final Matcher mat = p.matcher(cname);
+                    if(mat.matches()) {
+                        String row = mat.group(1);
+                        String header = mat.group(2);
+                        
+                        if(TypeU.isNumberic(row)) {
+                            if(!TypeU.isNumberic(header)) {
+                                if(!km.containsKey(header)) {
+                                    header = header.toUpperCase();
+                                    if(!km.containsKey(header)) {// 这个可能是采用地质命名
+                                        Integer[] aa = DataCell.addr2offset(cname);
+                                        if(aa==null)return null;
+                                        header = aa[1]+"";
+                                    }else {// excel 表名解析失败
+                                        header = this.km.get(header)+"";// 使用列名解释
+                                    }
+                                }else {// 使用列名解释
+                                    header = this.km.get(header)+"";
+                                }
+                                
+                            }//if
+                            int i = TypeU.parseNumber(row).intValue();
+                            if(i>0)i--;// 转换成offset地质，从1开始。
+                            return new Integer[] {
+                                i,
+                                TypeU.parseNumber(header).intValue()
+                            };
+                        }//if
+                    }
+                    return null;
+                };
+                
+                final String ss[] = str.split("[:]+");
+                final Integer[] from = parse.apply(ss[0]);
+                final Integer[] to = parse.apply(ss[1]);
+                
+                return this.range(from[0],from[1],to[0],to[1]);
+            }
+
+            /**
+             * 获得子集合
+             *    从上到下，从左到右
+             * @param i0 从0开始 行坐标 z：左上角奥
+             * @param j0 从0开始 列坐标：左上角
+             * @param i1 包含
+             * @param j1 包含
+             * @return
+             */
+            public DataMatrix<T> range(final int i0,final int j0,final int i1,final int j1){
+                final List<String> hh = this.header().subList(j0,j1+1);
+                return new DataMatrix<>(sub_2darray(this.cells,i0,j0,i1,j1),hh);
+            }
+
+            /**
+             * 船舰子矩阵
+             * @param cells 对象二维数组
+             * @param i0 从0开始 行坐标
+             * @param j0 从0开始 列坐标
+             * @param i1 包含
+             * @param j1 包含
+             * @return 子矩阵
+             */
+            public T[][] sub_2darray(final T[][] cells, final int i0,final int j0,final int i1,final int j1) {
+                final int h = i1-i0+1;
+                final int w = j1-j0+1;
+                @SuppressWarnings("unchecked")
+                final T[][] cc = (T[][])Array.newInstance(getGenericClass(cells),h,w);
+                for(int i=i0;i<=i1;i++) {
+                    for(int j=j0;j<=j1;j++) {
+                        cc[i-i0][j-j0]=cells[i][j];
+                    }//for
+                }//for
+                return cc;
+            }
+
+            /**
+             * 船舰子矩阵
+             * @param cells 对象二维数组
+             * @param i0 从0开始
+             * @param j0 从0开始
+             * @param i1 包含
+             * @param j1 包含
+             * @return 子矩阵
+             */
+            public T[][] sub_2darray(final int i0,final int j0,final int i1,final int j1) {
+                int h = i1-i0+1;
+                int w = j1-j0+1;
+                @SuppressWarnings("unchecked")
+                T[][] cc = (T[][])Array.newInstance(getGenericClass(cells),h,w);
+                for(int i=i0;i<=i1;i++) {
+                    for(int j=j0;j<=j1;j++) {
+                        cc[i-i0][j-j0]=cells[i][j];
+                    }//for
+                }//for
+                return cc;
+            }
+
+            /**
+             * 船舰子矩阵
+             * @param cells 对象二维数组
+             * @param i0 从0开始
+             * @param j0 从0开始
+             * @param i1 包含
+             * @param j1 包含
+             * @return 子矩阵
+             */
+            public T[][] sub_2darray(final T[][] cells,final String rangeName) {
+                RangeDef rangedef = name2range(rangeName);
+                if(rangedef==null)return null;
+                int i0 = rangedef.x0(); int j0 = rangedef.y0();
+                int i1 = rangedef.x1(); int j1 = rangedef.y1();
+                return this.sub_2darray(cells,i0, j0, i1, j1);
+            }
+
+            /**
+             *  创建子矩阵
+             * rangeName:excel 中的区域命名
+             * @return 子矩阵
+             */
+            public T[][] sub_2darray(final String rangeName) {
+                RangeDef rangedef = name2range(rangeName);
+                if(rangedef==null)return null;
+                int i0 = rangedef.x0(); int j0 = rangedef.y0();
+                int i1 = rangedef.x1(); int j1 = rangedef.y1();
+                return this.sub_2darray(i0, j0, i1, j1);
+            }
+
+            /**
+             * 获取子矩阵用EXCEL使用坐标
+             * @param i0 从0开始
+             * @param j0 从0开始
+             * @param i1 包含
+             * @param j1 包含
+             * @return 子矩阵
+             */
+            public DataMatrix<T> submx(final int i0,final int j0,final int i1,final int j1) {
+                final int n = j1-j0+1;
+                if(n<=0)return null;
+                final List<String> hh = this.header().stream().limit(n).collect(Collectors.toList());// 表头数据
+                return new DataMatrix<>(this.sub_2darray(i0, j0, i1, j1),hh);
+            }
+
+            /**
+             * 获取子矩阵用EXCEL命名吧
+             * @param rangeName,比如 A1:B5  -> 0,0:4,2
+             * 注意：rangeName是相对于this矩阵本身的便宜，不要于excel 的sheet 互相混淆。
+             * @return 子矩阵
+             */
+            public DataMatrix<T> submx(final String rangeName) {
+                RangeDef rangedef = name2range(rangeName);
+                if(rangedef==null)return null;
+                final int i0 = rangedef.x0(); final int j0 = rangedef.y0();
+                final int i1 = rangedef.x1(); final int j1 = rangedef.y1();
+                final int n = j1-j0+1;// 区间长度
+                if(n<=0)return null;
+                final List<String> hh = this.header().stream().limit(n).collect(Collectors.toList());// 表头数据
+                System.out.println(rangedef);
+                return new DataMatrix<>(this.sub_2darray(i0, j0, i1, j1),hh);
+            }
+
+            /**
+             * 表头，列名字段序列:
+             * 
+             * @return 返回 数据 的表头，列名序列
+             */
+            public String[] hh(){
+                return this.km.entrySet().stream()
+                    .sorted((a,b)->a.getValue()-b.getValue())
+                    .map(e->e.getKey()).toArray(String[]::new);
+            }
+
+            /**
+             * 表头，列名字段序列:
+             * @return 返回 数据 的表头，列名序列
+             */
+            public List<String> header(){
+                return this.km.entrySet().stream()
+                    .sorted((a,b)->a.getValue()-b.getValue())
+                    .map(e->e.getKey()).collect(Collectors.toList());
+            }
+
+            /**
+             * 设置矩阵的表头字段序列:
+             * 
+             * @param keysMap {(name,id)}的字段序列
+             * @return 设置成功的 表头字段序列：{(name,id)}的字段序列 
+             */
+            public Map<String,Integer> header2id(final Map<String,Integer> keysMap){
+                this.km = keysMap;
+                return km; 
+            }
+
+            /**
+             * 设置矩阵的表头列名字段序列:
+             * @param ss 表头字段序列,用header2id
+             * @param delim分隔符,null 表示采用用"[,/\\\\]+" 进行分隔
+             * @return {(name,id)}的字段序列
+             */
+            public Map<String,Integer> header2id(final String ss,String delim){
+                // 制定健值映射
+                return this.header2id(Arrays.asList(ss.split(delim==null?"[,/\\\\]+":delim)));
+            }
+
+            /**
+             * 设置或获取列名字段序列:
+             * @param items 列名字段序列:
+             * @return Map<String,Integer>
+             */
+            public Map<String,Integer> header2id(final List<?> items){
+                final Map<String, Integer> keysMap = new HashMap<String, Integer>();
+                if (items == null) {
+                    final var hh = this.header();
+                    for (int i = 0; i < hh.size(); i++) {
+                        keysMap.put(hh.get(i), i);
+                    }//for
+                    return keysMap;
+                } else {
+                    int i = 0;
+                    for (Object key : items) {
+                        keysMap.put(key + "", i++);
+                    }//for
+                    this.header2id(keysMap);
+                    return keysMap;
+                }// if
+            }
+
+            /**
              * 设置  (i,j)位置的元素
              * @param i 行编号从0开始
              * @param j 列编号从0开始
-             * @return 当前矩阵示例，用于链式编程
+             * @param value 列编号从0开始
+             * @return 当前矩阵实例，用于链式编程
              */
-            public DataMatrix<T> set(final int i,final int j, final T value) {
-                if (i < this.cells.length)
-                    return null;
-                if (j < this.cells[i].length)
-                    return null;
-                this.cells[i][j] = value;
+            public DataMatrix<T> setOne(final int i,final int j, final T value) {
+                setMany(i,j,false,value);
+                return this;
+            }
+            
+            
+            /**
+             * 设置多个元素
+             * @param i 开始行索引 从0开始
+             * @param j 开始列索引 从0开始
+             * @param byRow 是否按行设置，true:按行从前向后进行向后进行设置,false 按列从上向下进行设置
+             * @param oo 数据序列
+             * @return 当前矩阵实例，用于链式编程
+             */
+            public DataMatrix<T> setMany(final Number i,final Number j,boolean byRow,final Object ...oo) {
+                final var shape = this.shape();
+                Stream.iterate(0,k->k+1).limit(oo.length).forEach(k->{
+                    final var value= TypeU.coerce(oo[k], this.getCellClass());
+                    int _i = (i.intValue() + (byRow?0:k) ) %shape._1();
+                    int _j = (j.intValue() + (byRow?k:0) ) %shape._2();
+                    this.cells[_i][_j] = value;
+                });
                 
                 return this;
             }
             
+            /**
+             * set Many 的别名
+             * [i0,j0,v0, i1,j1,v1, ... ]
+             * @param oo (行索引，列索引， 位点数据),3元祖的序列
+             * @return 当前矩阵实例，用于链式编程
+             */
+            public DataMatrix<T> set(final Object ...oo) {
+                int size = oo.length;
+                for(int p=0;p<size;p+=3) {
+                    final var i= TypeU.coerce(oo[p+0], Integer.class);
+                    final var j= TypeU.coerce(oo[p+1], Integer.class);
+                    final var value= TypeU.coerce(oo[p+2], this.getCellClass());
+                    this.cells[i][j]=value;
+                }
+                return this;
+            }
+            
+            /**
+             * 按行进行设置：
+             * @param i 开始行号索引从0开始
+             * @param j 开始列号索引从0开始
+             * @param oo 行数据，多余元素被截取去除
+             * @return DataMatrix 对象本身，以方便进行链式编程
+             */
+            public DataMatrix<T> setRow(final Number i,final Number j,final Object ...oo) {
+                return this.setMany(i,j,true,oo);
+            }
+            
+            /**
+             * 按列进行设置：:多余元素被截取去除
+             * @param i 开始行号索引从0开始
+             * @param j 开始列号索引从0开始
+             * @param oo 列数据,多余元素被截取去除
+             * @return DataMatrix 对象本身，以方便进行链式编程
+             */
+            public DataMatrix<T> setColumn(final Number i,final Number j,final Object ...oo) {
+                return this.setMany(i,j,false,oo);
+            }
+
+            /**
+             * 设置列从列索引j开始之后的列名称。
+             * @param j 列索引的起始位置从0开始。
+             * @param columnNames 列名字段序列。
+             * @return 当前对象的本身 以实现链式编程
+             */
+            public DataMatrix<T> setColumnNames(int j, String ...columnNames){
+                final var hitr = this.header().iterator();// 列名遍历器
+                final var hh = Stream.iterate(0,i->i+1).limit(this.width()).map(i->{
+                    if(i>=j && columnNames!=null && i-j<columnNames.length 
+                        && columnNames[i-j]!=null) return columnNames[i-j].strip();// 字段名称
+                    else return hitr.hasNext()? hitr.next(): ("_"+excelname(i));// 如果原来的长度表长不等于列宽，则采用excelname给与不同。
+                }).collect(Collectors.toList());
+                
+               return this.setHeader(hh);
+            }
+
+            /**
+             * 设置 表头：列名序列
+             * @param hh 表头,列名序列
+             * @return 当前对象的本身 以实现链式编程
+             */
+            public DataMatrix<T> setHeader(final String ...hh){
+               return this.setHeader(Arrays.asList(hh));
+            }
+
+            /**
+             * 设置 表头：列名序列
+             * @param hh 表头名称序列，用逗号分隔
+             * @return 当前对象的本身 以实现链式编程
+             */
+            public DataMatrix<T> setHeader(final String hh){
+               return this.setHeader(Arrays.asList(hh.split("[,\\\\/\n]+")));
+            }
+
+            /**
+             * 设置 表头列表
+             * @return 当前对象的本身 以实现链式编程
+             */
+            public DataMatrix<T> setHeader(final List<String>hh){
+                final int n = this.width();
+                final var final_hh = new LinkedList<String>();
+                if(hh!=null)final_hh.addAll(hh);
+                final var hitr = final_hh.listIterator();
+                for(int i=0;i<n;i++) {// 诸列检查
+                    if(!hitr.hasNext()) {// 使用excelname 来进行补充列表的补填。
+                        hitr.add("_"+excelname(i));// 使用默认的excel名称加入一个下划线前缀
+                    }else {
+                        hitr.next();// 步进到下一个位置
+                    }//if !hitr.hasNext()
+                }//for i
+                this.header2id(final_hh);//表头设置
+                
+                return this;
+            }
+
+            /**
+             * 列名转列id id 从0开始
+             * @return Map<String, Integer>
+             */
+            public Map<String, Integer> header2id() {
+                return km;
+            }
+
+            /**
+             * id2header
+             * @return Map<Integer, String>
+             */
+            public Map<Integer, String> id2header() {
+                final var i2h = new HashMap<Integer,String>();
+                km.forEach((header,id)->{
+                    i2h.put(id,header);
+                });
+                return i2h;
+            }
+
             /**
              * 矩阵的宽度 ，列数
              * @return 矩阵的宽度 ，列数
@@ -2378,70 +2619,75 @@ public class XlsFile {
             }
             
             /**
-             * 用row 的内设置指定行数据
-             * 采用循环填充的方式仅从行设置
-             * @param i 航编号从0开始
-             * @param list 
-             */
-            @SuppressWarnings("unchecked")
-            public void lrow(final int i, final List<T> row) {
-                //Optional<Class<T>> optCls1 = row.stream().map(e->e!=null).findFirst().map(e->(Class<T>)e.getClass());
-                //System.out.println(optCls1.get());
-                final Optional<Class<T>> optCls = Optional.ofNullable(getGenericClass(cells));
-                if(!optCls.isPresent())return;
-                final T[] tt= row.stream().toArray(n->(T[])Array.newInstance(optCls.get(), n));
-                row(i,tt);
-            }
-            
-            /**
-             * 用row 的内设置指定行数据
-             * 采用循环填充的方式仅从行设置
-             * @param i
-             * @param list 
-             */
-            public void row(final int i,final T[] row) {
-                if(row ==null||row.length<1|| this.cells==null) {
-                    System.out.println("数据格式非法，无法设置行数据。");
-                    return;
-                }
-                
-                if(this.cells.length>i) {
-                    final int size = row.length;
-                    for(int j=0;j<this.width();j++) {
-                        try {
-                            this.cells[i][j]=row[j%size];
-                        }catch(Exception e) {
-                            e.printStackTrace();
-                        }
-                    }// for
-                }
-            }
-            
-            /**
-             * 采用循环填充的方式仅从行设置
-             * @param i
-             * @param list
-             */
-            public void lcol(final int j,final List<T> list) {
-                if(list ==null||list.size()<1 || this.cells==null) {
-                    System.out.println("数据格式非法，无法设置行数据。");
-                    return;
-                }//if
-                
-                if(this.cells.length>j) {
-                    final int size = list.size();
-                    for(int i=0;i<this.height();i++) {
-                        this.cells[i][j]=list.get(i%size);
-                    }//for
-                }//if
-            }
-            
-            /**
              * 返回矩阵的高度与宽度即行数与列数
              * @return (height:行数,width:列数)
              */
             public Tuple2<Integer,Integer> shape(){
                 return DataMatrix.shape(this.cells);
+            }
+
+            /**
+             * 返回数据的列数(水平长度较列数，垂直长度叫行数）
+             * @return this.width;
+             */
+            public int size() {
+                return this.width();
+            }
+
+            /**
+             * 用row 的内设置指定行数据
+             * 采用循环填充的方式仅从行设置
+             * @param i 航编号从0开始
+             * @param row 行数据列表
+             * @return this 本身
+             */
+            @SuppressWarnings("unchecked")
+            public DataMatrix<T> lrow(final int i, final List<T> row) {
+                //Optional<Class<T>> optCls1 = row.stream().map(e->e!=null).findFirst().map(e->(Class<T>)e.getClass());
+                //System.out.println(optCls1.get());
+                final Optional<Class<T>> optCls = Optional.ofNullable(getGenericClass(cells));
+                if(!optCls.isPresent())return this;
+                
+                final Class<T> cellClass = optCls.get();//  提取数据单元类型
+                final T[] tt= row.stream().map(e->TypeU.coerce(e, cellClass))
+                    .toArray(n->(T[])Array.newInstance(cellClass, n));
+                row(i,tt);
+                return this;
+            }
+            
+            /**
+             * 用row 的内设置指定行数据
+             * 采用循环填充的方式仅从行设置
+             * @param i 行索引 从0开始
+             * @param row 行数据数组
+             */
+            @SuppressWarnings("unchecked")
+            public void row(final int i,final T[] row) {
+                if(row ==null||row.length<1|| this.cells==null) {
+                    System.out.println("数据格式非法，无法设置行数据。");
+                    return;
+                }
+                Class<T> cellClass = null;
+                if(this.cells.length>i && i>=0) {
+                    final int size = row.length;
+                    for(int j=0;j<this.width();j++) {
+                        try {
+                            this.cells[i][j]=row[j%size];// 尝试给予数据复制
+                        }catch(ArrayStoreException e) {// 尝试给与进行类型转换修复。
+                            try {
+                                if(cellClass==null) cellClass = DataMatrix.getGenericClass(cells, null);// 提取单元格数据类型
+                                this.cells[i][j]=TypeU.coerce(row[j%size],
+                                    cellClass==null 
+                                        ? (Class<T>)Object.class
+                                        : cellClass);
+                            }catch(Exception ex) {
+                                ex.printStackTrace();
+                            }
+                        }catch(Exception e) {
+                            e.printStackTrace();
+                        }
+                    }// for
+                }
             }
             
             /**
@@ -2457,19 +2703,7 @@ public class XlsFile {
             }
             
             /**
-             * 这个一般用于：当 DataMatrix为一个列向量（n*1）的时候,提取数据元素。<br>
-             * 返回i行的一个元素 ,若是列向量则为该列向量的第i个元素<br> 
-             * @param i 行号：从0开始
-             * @return T 每一行的第一个元素。
-             */
-            public T get(final int i) {
-                T [] t = this.row(i);
-                if(t ==null) return null;
-                return t.length<1?null:t[0];
-            }
-            
-            /**
-             * 获取行信息
+             * 获取行信息:返回一个LinkedHashMap,方便转换成IRecord
              * list 宝石获取列表形式
              * @param i 从0开始
              * @return
@@ -2487,357 +2721,12 @@ public class XlsFile {
             
             /**
              * 行列表
-             * @return 行列表
+             * @return 行列表 集合
              */
             public List<List<T>>lrows(){
                 return Arrays.stream(this.cells).map(Arrays::asList).collect(Collectors.toList());
             }
             
-            /**
-             * 按照做规约计算<br>
-             * 视矩阵为行列表[rows]：对每行数据使用row_evaluator做进行变换 得到一个 中间结构为：{(rowname:String,u:U)} 的hash列表lhm,<br>
-             * 然后在调用finisher对中间结构<br>
-             * lhm 进行变成目标结构O。<br>
-             * 
-             * @param <U> 中间结构hashMap的元素类型 Usual 一般型，Unknown 变量型
-             * @param <O> 目标结果的类型 Objective
-             * @param filter 行选择器 :row->bool
-             * @param rowname 行名生成器：row->String
-             * @param row_evaluator 行变换器:row->u
-             * @param finisher 结果整合器:{(string,u)}->o
-             * @return 目标结果的类型 O
-             */
-            public <U,O> O reduceRows(final Predicate<DRow<T>> filter,final Function<Integer,String> rowname,
-                final Function<DRow<T>,U> row_evaluator,final Function<LinkedHashMap<String,U>,O> finisher){
-                
-                final Predicate<DRow<T>> final_filter = filter==null?e->true:filter;
-                final Function<Integer,String> final_rowname = rowname==null?e->e+"":rowname;
-                final LinkedHashMap<String,U> mm = new LinkedHashMap<>();
-                final var ai = new AtomicInteger(0);
-                this.lrows().forEach(row->{
-                    final int i = ai.getAndIncrement();
-                    final var drow = DRow.ROW(final_rowname.apply(i),row,this.header());// 生行对象
-                    if(final_filter.test(drow)) mm.put(drow.getName(),row_evaluator.apply(drow));
-                });
-                return finisher.apply(mm);
-            }
-            
-            /**
-             * 按照做规约计算<br>
-             * 视矩阵为行列表[lhm]：对每行数据使用row_evaluato r做进行变换 得到一个 中间结构为：{(rowname:String,u:U)} 的hash列表lhm,<br>
-             * 然后在调用finisher对中间结构<br>
-             * lhm 进行变成目标结构O。<br>
-             * 
-             * @param <U> 中间结构hashMap的元素类型 Usual 一般型，Unknown 变量型
-             * @param <O> 目标结果的类型 Objective
-             * @param filter 行选择器 :lhm->bool
-             * @param rowname 行名生成器：lhm->String
-             * @param row_evaluator 行变换器:row->u
-             * @param finisher 结果整合器:{(string,u)}->o
-             * @return 目标结果的类型 O
-             */
-            public <U,O> O reduceRows2(final Predicate<LinkedHashMap<String,T>> filter,
-                final Function<LinkedHashMap<String,T>,U> row_evaluator,final Function<LinkedHashMap<String,U>,O> finisher){
-                final Predicate<LinkedHashMap<String,T>> final_filter = filter==null?e->true:filter;
-                final LinkedHashMap<String,U> mm = new LinkedHashMap<>();
-                AtomicInteger ai = new AtomicInteger(0);
-                this.forEach(lhm->{
-                    if(final_filter.test(lhm))mm.put(ai.get()+"", row_evaluator.apply(lhm));
-                });
-                return finisher.apply(mm);
-            }
-            
-            /**
-             * 按照做规约计算<br>
-             * 视矩阵为行列表[rows]：对每行数据使用row_evaluator做进行变换 得到一个 中间结构为：{(rowname:String,u:U)} 的hash列表lhm,<br>
-             * 然后在调用finisher对中间结构<br>
-             * lhm 进行变成目标结构O。<br>
-             * 
-             * @param <U> 中间结构hashMap的元素类型 Usual 一般型，Unknown 变量型
-             * @param <O> 目标结果的类型 Objective
-             * @param row_evaluator 行变换器:row->u
-             * @return DataMatrix<U> 数据阵列
-             */
-            public <U> DataMatrix<U> mapRows(final Function<DRow<T>,DRow<U>> row_evaluator){
-                
-                return this.reduceRows(row_evaluator, rows->{
-                    final var uu = rows.values().stream().map(e->e.getElems()).collect(Collectors.toList());
-                    return new DataMatrix<U>(uu,(List<String>)null);
-                });
-            }
-
-            /**
-             * 行映射 行是一个 hashMap:注意区分 mapByRows 变换成一个数据流Stream<T>
-             * @param mapper 行映射: {<String,T>} --> {<String,U>} 的函数
-             * @return 一个新的行数据 {<String,U>}
-             */
-            public <U> DataMatrix<U> mapRows2(final Function<LinkedHashMap<String,T>,LinkedHashMap<String,U>> mapper){
-                final List<String> hh = new ArrayList<String>();
-                final Collection<List<U>> cc = new LinkedList<>();
-                @SuppressWarnings("unchecked")
-                final Function<LinkedHashMap<String,T>,LinkedHashMap<String,U>> final_mapper = mapper==null
-                    ?   e->(LinkedHashMap<String,U>)e // 强制类型转换
-                    :   mapper;
-                this.forEach(rec->{
-                    final LinkedHashMap<String,U> mm = final_mapper.apply(rec);
-                    cc.add(mm.entrySet().stream().map(e->e.getValue()).collect(Collectors.toList()));
-                    hh.addAll(mm.keySet().stream()
-                        .filter(key->!hh.contains(key))
-                        .collect(Collectors.toList()));
-                });
-                
-                return new DataMatrix<U>(cc,hh);
-            }
-
-            /**
-             * 按照做规约计算<br>
-             * 视矩阵为行列表[lhm]：对每行数据使用row_evaluato r做进行变换 得到一个 中间结构为：{(rowname:String,u:U)} 的hash列表lhm,<br>
-             * 然后在调用finisher对中间结构 <br>
-             * lhm 进行变成目标结构O。<br>
-             * 行名变换器：rowname 默认为行号,从0开始<br>
-             * <br>
-             * @param <U> 中间结构hashMap的元素类型 Usual 一般型，Unknown 变量型
-             * @param row_evaluator 行变换器:row->u
-             * @param u2o 结果整合器:{(string,u)}->o
-             * @return O 目标结果类型
-             */
-           public <U,O> O reduceRows(final Function<DRow<T>,U> row_evaluator,
-                final Function<LinkedHashMap<String,U>,O> finisher){
-               
-               return this.reduceRows(null,null,row_evaluator, finisher);
-           }
-           
-           /**
-            * 对列进行规约
-            * @param <U> 中间元素的 对象类型
-            * @param col_evaluator 中间结果的计算方法
-            * @return LinkedHashMap<String,U>
-            */
-           public <U> LinkedHashMap<String,U> reduceColumns(final Function<DColumn<T>,U> col_evaluator){
-               
-              return reduceColumns((Predicate<DColumn<T>>)null,col_evaluator,e->e);
-           }
-           
-            /**
-             * 使用示例：<br>
-             * final var mx = DataMatrix.of(dd,(IRecord e)->(e).lhm(Double.class));<br>
-             * final var rec = mx.reduceColumns(dblsum,IRecord::REC);<br>
-             * 
-             * @param <U> 中间元素的 对象类型
-             * @param <O> 最终结果的对象类型
-             * @param filter 列的过滤方法:(name,col)->boolean
-             * @param col_evaluator 中间结果的计算方法
-             * @param finisher 最终结果的变换函数
-             * @return O类型的最终结果
-             */
-            public <U,O> O reduceColumns(final Predicate<DColumn<T>> filter,
-                final Function<DColumn<T>,U> col_evaluator,
-                final Function<LinkedHashMap<String,U>,O> finisher){
-                
-                final LinkedHashMap<String,U> mm = new LinkedHashMap<>();
-                final var ai = new AtomicInteger(0);
-                final var names = this.hh();
-                final Predicate<DColumn<T>> final_filter = filter==null?s->true:filter;
-                this.lcols().forEach(col->{
-                    final int idx = ai.getAndIncrement(); // 编号
-                    final String name = names[idx];// 键名
-                    final var kv = DColumn.COLUMN(name,col);
-                    if(final_filter.test(kv)) mm.put(name,col_evaluator.apply(kv));
-                });
-                return finisher.apply(mm);
-            }
-            
-            /**
-             * 使用示例：
-             * final var mx = DataMatrix.of(dd,(IRecord e)->(e).lhm(Double.class));
-             * final var rec = mx.reduceColumns(dblsum,IRecord::REC);
-             * 
-             * @param <U> 中间元素的 对象类型
-             * @param <O> 最终结果的对象类型
-             * @param filter 列的过滤方法:(name,col)->boolean
-             * @param col_evaluator 列值计算方法：
-             * @param finisher 最终结果的变换函数
-             * @return O类型的最终结果
-             */
-            public <U,O> O reduceColumns (final Function<DColumn<T>,U> col_evaluator,
-                final Function<LinkedHashMap<String,U>,O> finisher){
-                
-                return this.reduceColumns ((String)null,col_evaluator, finisher);
-            }
-            
-            /**
-             * 按照列计算
-             * 使用示例：
-             * final var mx = DataMatrix.of(dd,(IRecord e)->(e).lhm(Double.class));
-             * final var rec = mx.reduceColumns(dblsum,IRecord::REC);
-             * 
-             * @param <U> 中间元素的 对象类型
-             * @param <O> 最终结果的对象类型
-             * @param colnames 用逗号进行分割的列名列表。
-             * @param col_evaluator 中间结果的计算方法
-             * @param finisher 最终结果的变换函数
-             * @return O类型的最终结果
-             */
-            public <U,O> O reduceColumns(final String colnames,final Function<DColumn<T>,U> col_evaluator,
-                final Function<LinkedHashMap<String,U>,O> finisher) {
-                
-                final String names[] =  (colnames!=null)
-                ?   colnames.split("[\\s,\\\\]+")
-                :   this.hh();
-                return this.reduceColumns(names,col_evaluator, finisher);
-            }
-            
-            /**
-             * 按照列计算
-             * 使用示例：
-             * final var mx = DataMatrix.of(dd,(IRecord e)->(e).lhm(Double.class));
-             * final var rec = mx.reduceColumns(dblsum,IRecord::REC);
-             * 
-             * @param <U> 中间元素的 对象类型
-             * @param <O> 最终结果的对象类型
-             * @param colnames 用逗号进行分割的列名列表。
-             * @param col_evaluator 中间结果的计算方法
-             * @param finisher 最终结果的变换函数
-             * @return O类型的最终结果
-             */
-            public <U,O> O reduceColumns(final String[] colnames,final Function<DColumn<T>,U> col_evaluator,
-                final Function<LinkedHashMap<String,U>,O> finisher) {
-                final Predicate<DColumn<T>> filter = colnames==null
-                    ? p->true
-                    : p->Arrays.asList(colnames).contains(p.key());
-                return this.reduceColumns(filter, col_evaluator, finisher);
-            }
-            
-            /**
-            * 列的多指标变换：即一列变为多列的变换,比如 对于一个矩阵第一列是X,可以变换成 (X,X^2,DX,EX,...) 等一些列的统计指标列。也可以立理解为行展开运算。
-            * @param <U>
-            * @param filter
-            * @param col_evaluator
-            * @return DataMatrix<U>
-            */
-            public <U> DataMatrix<U> flatMapColumns(final Predicate<DColumn<T>> filter,
-                final Function<DColumn<T>,List<DColumn<U>>> col_evaluator){
-                
-                final var ai = new AtomicInteger(0);
-                final var names = this.hh();
-                final Predicate<DColumn<T>> final_filter = filter==null?s->true:filter;
-                List<DColumn<U>> columns= new LinkedList<>();
-                this.lcols().forEach(col->{
-                    final int idx = ai.getAndIncrement(); // 编号
-                    final String name = names[idx];// 键名
-                    final var column = new DColumn<>(name,col);
-                    if(final_filter.test(column)) columns.addAll(col_evaluator.apply(column));
-                });
-                
-                return new DataMatrix<U>(columns,(Class<U>)null);
-            }
-            
-            /**
-             * 列的多指标变换：即一列变为多列的变换,比如 对于一个矩阵第一列是X,可以变换成 (X,X^2,DX,EX,...) 等一些列的统计指标列。也可以立理解为行展开运算。
-             * @param <U>
-             * @param filter
-             * @param col_evaluator
-             * @return DataMatrix<U>
-             */
-             public <U> DataMatrix<U> flatMapColumns(final String colnames[],
-                 final Function<DColumn<T>,List<DColumn<U>>> col_evaluator){
-                 
-                 final Predicate<DColumn<T>> final_filter = colnames==null
-                        ?   s->true
-                        :   s->Arrays.asList(colnames).contains(s.getName());
-                 return this.flatMapColumns(final_filter, col_evaluator);
-             }
-             
-             /**
-             * 列的多指标变换：即一列变为多列的变换,比如 对于一个矩阵第一列是X,可以变换成 (X,X^2,DX,EX,...) 等一些列的统计指标列。也可以立理解为行展开运算。
-             * @param <U> 变换的值类型
-             * @param filter 过滤器
-             * @param col_evaluator
-             * @return DataMatrix<U>
-             */
-             public <U> DataMatrix<U> flatMapColumns(final String colnames,
-                 final Function<DColumn<T>,List<DColumn<U>>> col_evaluator){
-                 
-                 final Predicate<DColumn<T>> final_filter = colnames==null
-                        ?   s->true
-                        :   s->Arrays.asList(colnames.split("[,\\\\/]+")).contains(s.getName());
-                 return this.flatMapColumns(final_filter, col_evaluator);
-             }
-             
-             /**
-              * 列的多指标变换：即一列变为多列的变换,比如 对于一个矩阵第一列是X,可以变换成 (X,X^2,DX,EX,...) 等一些列的统计指标列。也可以立理解为行展开运算。
-              * @param <U> 变换的值类型
-              * @param filter 过滤器
-              * @param col_evaluator
-              * @return DataMatrix<U>
-              */
-             public <U> DataMatrix<U> mapColumns(final String colnames,
-                 final Function<DColumn<T>,DColumn<U>> col_evaluator){
-                 
-                 final Predicate<DColumn<T>> final_filter = colnames==null
-                        ?   s->true
-                        :   s->Arrays.asList(colnames.split("[,\\\\/]+")).contains(s.getName());
-                  return this.flatMapColumns(final_filter, col->Arrays.asList(col_evaluator.apply(col)));
-             }
-             
-             /**
-              * 列的多指标变换：即一列变为多列的变换,比如 对于一个矩阵第一列是X,可以变换成 (X,X^2,DX,EX,...) 等一些列的统计指标列。也可以立理解为行展开运算。
-              * @param <U> 变换的值类型
-              * @param filter 过滤器
-              * @param col_evaluator
-              * @return DataMatrix<U>
-              */
-             public <U> DataMatrix<U> mapColumns(final Function<DColumn<T>,DColumn<U>> col_evaluator){
-                 
-                return this.mapColumns(null,col_evaluator);
-             }
-            
-            /**
-             * 计算成一个键值对儿 集合
-             * @param <U> 值类型
-             * @param colnames 键名列表用逗号分隔
-             * @param evaluator 列计算函数
-             * @return {[String,U]}的结果序列
-             */
-            public <U> List<KVPair<String,U>> eval2kvs(final String colnames,
-                final Function<DColumn<T>,U> evaluator) {
-                
-                final List<KVPair<String,U>> ll = new LinkedList<>();
-                this.reduceColumns(colnames, evaluator, e->e).forEach((k,u)->{
-                    ll.add(new KVPair<String,U>(k,u));
-                });
-                return ll;
-            }
-            
-            /**
-             * 矩阵计算: 使用示例：
-             * 需要引用:DataMatrixApp的V向量函数<br>
-             * <br>
-             * final var alpha = V(10, n -> ((Function&lt;IRecord,IRecord&gt;) e ->REC(n,e))); //函数向量 <br> 
-             * final var beta = alpha.transpose(); // //函数向量 <br> 
-             * final var ff = alpha.mmult2(beta, Function::compose, e->e, Function::compose);//矩阵式的函数组合。 <br>
-             * final var xx = ff.evaluate(e->e.apply(REC("o","-")));<br>
-             * System.out.println(xx); 
-             * <br>
-             * @param <U> 计算结果的元素类型
-             * @param evaluator 计算函数:t->u
-             * @return U类型数据矩阵
-             */
-            @SuppressWarnings("unchecked")
-            public <U> DataMatrix<U> evaluate(Function<T,U> evaluator){
-                U[][] uu = null;// 结果矩阵
-                for (int i = 0; i < this.height(); i++) {
-                    for (int j = 0; j < this.width(); j++) {
-                        final U u = evaluator.apply(this.cells[i][j]);
-                        if (uu == null && u != null) {// 为结果分配存储空间
-                            uu = (U[][]) Array.newInstance(u.getClass(), this.height(), this.width());
-                        }// uu==null
-                        uu[i][j]=u;// 结果数值的返回记录
-                    }// for j
-                }// for i
-                return new DataMatrix<U>(uu,this.header());
-            }
-
             /**
              * 返回行数据
              * @return
@@ -2849,7 +2738,7 @@ public class XlsFile {
             /**
              * 获取行信息
              * @param i 从0开始
-             * @return
+             * @return 行数据数组
              */
             public T[] row(final int i) {
                 if(this.cells.length>i)return cells[i];
@@ -2857,33 +2746,42 @@ public class XlsFile {
             }
             
             /**
-             * 提取出列对象
-             * @param name
-             * @return 提取列对象
+             * 采用循环填充的方式仅从行设置
+             * @param i j 列索引 从0开始
+             * @param list 列数据
+             * @return this 本身
              */
-            public DColumn<T> getColumn(final String name){
-                return DColumn.COLUMN(name, this.lcol(name));
+            @SuppressWarnings("unchecked")
+            public DataMatrix<T> lcol(final int j,final List<T> list) {
+                if(list ==null||list.size()<1 || this.cells==null) {
+                    System.out.println("数据格式非法，无法设置行数据。");
+                    return this;
+                }//if
+                
+                Class<T> cellClass = null;
+                if(this.cells[0].length>j && j>=0) {
+                    final int size = list.size();
+                    for(int i=0;i<this.height();i++) {
+                        try {
+                            this.cells[i][j]=list.get(i%size);;// 尝试给予数据复制
+                        }catch(ArrayStoreException e) {// 尝试给与进行类型转换修复。
+                            try {
+                                if(cellClass==null) cellClass = DataMatrix.getGenericClass(cells, null);// 提取单元格数据类型
+                                this.cells[i][j]=TypeU.coerce(list.get(i%size),
+                                    cellClass==null 
+                                        ? (Class<T>)Object.class
+                                        : cellClass);
+                            }catch(Exception ex) {
+                                ex.printStackTrace();
+                            }
+                        }catch(Exception e) {
+                            e.printStackTrace();
+                        }// try
+                    }// for int i=0;i<this.height();i++
+                }//if this.cells.length>j
+                return this;
             }
-            
-            /**
-             * 提取出列对象
-             * @param name
-             * @return 提取列对象
-             */
-            public List<DColumn<T>> getColumns(){
-                return this.header().stream().map(name->DColumn.COLUMN(name,this.lcol(name))).collect(Collectors.toList());
-            }
-            
-            /**
-             * 提取出列对象
-             * @param j 列序号，从0开始
-             * @return 提取列对象
-             */
-            public DColumn<T> getColumn(final int j){
-                if(this.header()==null || this.header().size()<j)return null;
-                return DColumn.COLUMN(this.header().get(j), this.lcol(j));
-            }
-            
+
             /**
              * 
              * @return
@@ -3003,6 +2901,361 @@ public class XlsFile {
             }
 
             /**
+             * 按照做规约计算<br>
+             * 视矩阵为行列表[rows]：对每行数据使用row_evaluator做进行变换 得到一个 中间结构为：{(rowname:String,u:U)} 的hash列表lhm,<br>
+             * 然后在调用finisher对中间结构<br>
+             * lhm 进行变成目标结构O。<br>
+             * 
+             * @param <U> 中间结构hashMap的元素类型 Usual 一般型，Unknown 变量型
+             * @param <O> 目标结果的类型 Objective
+             * @param filter 行选择器 :row->bool
+             * @param rowname 行名生成器：row->String
+             * @param row_evaluator 行变换器:row->u
+             * @param finisher 结果整合器:{(string,u)}->o
+             * @return 目标结果的类型 O
+             */
+            public <U,O> O reduceRows(final Predicate<DRow<T>> filter,final Function<Integer,String> rowname,
+                final Function<DRow<T>,U> row_evaluator,final Function<LinkedHashMap<String,U>,O> finisher){
+                
+                final Predicate<DRow<T>> final_filter = filter==null?e->true:filter;
+                final Function<Integer,String> final_rowname = rowname==null?e->e+"":rowname;
+                final LinkedHashMap<String,U> mm = new LinkedHashMap<>();
+                final var ai = new AtomicInteger(0);
+                this.lrows().forEach(row->{
+                    final int i = ai.getAndIncrement();
+                    final var drow = DRow.ROW(final_rowname.apply(i),row,this.header());// 生行对象
+                    if(final_filter.test(drow)) mm.put(drow.getName(),row_evaluator.apply(drow));
+                });
+                return finisher.apply(mm);
+            }
+
+            /**
+             * 按照做规约计算<br>
+             * 视矩阵为行列表[lhm]：对每行数据使用row_evaluato r做进行变换 得到一个 中间结构为：{(rowname:String,u:U)} 的hash列表lhm,<br>
+             * 然后在调用finisher对中间结构<br>
+             * lhm 进行变成目标结构O。<br>
+             * 
+             * @param <U> 中间结构hashMap的元素类型 Usual 一般型，Unknown 变量型
+             * @param <O> 目标结果的类型 Objective
+             * @param filter 行选择器 :lhm->bool
+             * @param rowname 行名生成器：lhm->String
+             * @param row_evaluator 行变换器:row->u
+             * @param finisher 结果整合器:{(string,u)}->o
+             * @return 目标结果的类型 O
+             */
+            public <U,O> O reduceRows2(final Predicate<LinkedHashMap<String,T>> filter,
+                final Function<LinkedHashMap<String,T>,U> row_evaluator,final Function<LinkedHashMap<String,U>,O> finisher){
+                final Predicate<LinkedHashMap<String,T>> final_filter = filter==null?e->true:filter;
+                final LinkedHashMap<String,U> mm = new LinkedHashMap<>();
+                AtomicInteger ai = new AtomicInteger(0);
+                this.forEach(lhm->{
+                    if(final_filter.test(lhm))mm.put(ai.get()+"", row_evaluator.apply(lhm));
+                });
+                return finisher.apply(mm);
+            }
+
+            /**
+             * 按照做规约计算<br>
+             * 视矩阵为行列表[rows]：对每行数据使用row_evaluator做进行变换 得到一个 中间结构为：{(rowname:String,u:U)} 的hash列表lhm,<br>
+             * 然后在调用finisher对中间结构<br>
+             * lhm 进行变成目标结构O。<br>
+             * 
+             * @param <U> 中间结构hashMap的元素类型 Usual 一般型，Unknown 变量型
+             * @param <O> 目标结果的类型 Objective
+             * @param row_evaluator 行变换器:row->u
+             * @return DataMatrix<U> 数据阵列
+             */
+            public <U> DataMatrix<U> mapRows(final Function<DRow<T>,DRow<U>> row_evaluator){
+                
+                return this.reduceRows(row_evaluator, rows->{
+                    final var uu = rows.values().stream().map(e->e.getElems()).collect(Collectors.toList());
+                    return new DataMatrix<U>(uu,(List<String>)null);
+                });
+            }
+
+            /**
+             * 行映射 行是一个 hashMap:注意区分 mapByRows 变换成一个数据流Stream<T>
+             * @param mapper 行映射: {<String,T>} --> {<String,U>} 的函数
+             * @return 一个新的行数据 {<String,U>}
+             */
+            public <U> DataMatrix<U> mapRows2(final Function<LinkedHashMap<String,T>,LinkedHashMap<String,U>> mapper){
+                final List<String> hh = new ArrayList<String>();
+                final Collection<List<U>> cc = new LinkedList<>();
+                @SuppressWarnings("unchecked")
+                final Function<LinkedHashMap<String,T>,LinkedHashMap<String,U>> final_mapper = mapper==null
+                    ?   e->(LinkedHashMap<String,U>)e // 强制类型转换
+                    :   mapper;
+                this.forEach(rec->{
+                    final LinkedHashMap<String,U> mm = final_mapper.apply(rec);
+                    cc.add(mm.entrySet().stream().map(e->e.getValue()).collect(Collectors.toList()));
+                    hh.addAll(mm.keySet().stream()
+                        .filter(key->!hh.contains(key))
+                        .collect(Collectors.toList()));
+                });
+                
+                return new DataMatrix<U>(cc,hh);
+            }
+
+            /**
+             * 按照行进行映射:注意区分 mapRows 变换成另外一个 DataMatrix<U>
+             * @param <U> 目标行记录{(String,T)} 所变换成的结果类型
+             * @param mapper 行数据映射 LinkedHashMap<String,T>的结构, key->value 
+             * @return U 类型的流
+             */
+            public <U> Stream<U> mapByRow(final Function<LinkedHashMap<String,T>,U> mapper) {
+                return rowStream(mapper);
+            }
+
+            /**
+                 * 按照做规约计算<br>
+                 * 视矩阵为行列表[lhm]：对每行数据使用row_evaluato r做进行变换 得到一个 中间结构为：{(rowname:String,u:U)} 的hash列表lhm,<br>
+                 * 然后在调用finisher对中间结构 <br>
+                 * lhm 进行变成目标结构O。<br>
+                 * 行名变换器：rowname 默认为行号,从0开始<br>
+                 * <br>
+                 * @param <U> 中间结构hashMap的元素类型 Usual 一般型，Unknown 变量型
+                 * @param row_evaluator 行变换器:row->u
+                 * @param u2o 结果整合器:{(string,u)}->o
+                 * @return O 目标结果类型
+                 */
+               public <U,O> O reduceRows(final Function<DRow<T>,U> row_evaluator,
+                    final Function<LinkedHashMap<String,U>,O> finisher){
+                   
+                   return this.reduceRows(null,null,row_evaluator, finisher);
+               }
+
+            /**
+                * 对列进行规约
+                * @param <U> 中间元素的 对象类型
+                * @param col_evaluator 中间结果的计算方法
+                * @return LinkedHashMap<String,U>
+                */
+               public <U> LinkedHashMap<String,U> reduceColumns(final Function<DColumn<T>,U> col_evaluator){
+                   
+                  return reduceColumns((Predicate<DColumn<T>>)null,col_evaluator,e->e);
+               }
+
+            /**
+             * 使用示例：<br>
+             * final var mx = DataMatrix.of(dd,(IRecord e)->(e).lhm(Double.class));<br>
+             * final var rec = mx.reduceColumns(dblsum,IRecord::REC);<br>
+             * 
+             * @param <U> 中间元素的 对象类型
+             * @param <O> 最终结果的对象类型
+             * @param filter 列的过滤方法:(name,col)->boolean
+             * @param col_evaluator 中间结果的计算方法
+             * @param finisher 最终结果的变换函数
+             * @return O类型的最终结果
+             */
+            public <U,O> O reduceColumns(final Predicate<DColumn<T>> filter,
+                final Function<DColumn<T>,U> col_evaluator,
+                final Function<LinkedHashMap<String,U>,O> finisher){
+                
+                final LinkedHashMap<String,U> mm = new LinkedHashMap<>();
+                final var ai = new AtomicInteger(0);
+                final var names = this.hh();
+                final Predicate<DColumn<T>> final_filter = filter==null?s->true:filter;
+                this.lcols().forEach(col->{
+                    final int idx = ai.getAndIncrement(); // 编号
+                    final String name = names[idx];// 键名
+                    final var kv = DColumn.COLUMN(name,col);
+                    if(final_filter.test(kv)) mm.put(name,col_evaluator.apply(kv));
+                });
+                return finisher.apply(mm);
+            }
+
+            /**
+             * 使用示例：
+             * final var mx = DataMatrix.of(dd,(IRecord e)->(e).lhm(Double.class));
+             * final var rec = mx.reduceColumns(dblsum,IRecord::REC);
+             * 
+             * @param <U> 中间元素的 对象类型
+             * @param <O> 最终结果的对象类型
+             * @param filter 列的过滤方法:(name,col)->boolean
+             * @param col_evaluator 列值计算方法：
+             * @param finisher 最终结果的变换函数
+             * @return O类型的最终结果
+             */
+            public <U,O> O reduceColumns (final Function<DColumn<T>,U> col_evaluator,
+                final Function<LinkedHashMap<String,U>,O> finisher){
+                
+                return this.reduceColumns ((String)null,col_evaluator, finisher);
+            }
+
+            /**
+             * 按照列计算
+             * 使用示例：
+             * final var mx = DataMatrix.of(dd,(IRecord e)->(e).lhm(Double.class));
+             * final var rec = mx.reduceColumns(dblsum,IRecord::REC);
+             * 
+             * @param <U> 中间元素的 对象类型
+             * @param <O> 最终结果的对象类型
+             * @param colnames 用逗号进行分割的列名列表。
+             * @param col_evaluator 中间结果的计算方法
+             * @param finisher 最终结果的变换函数
+             * @return O类型的最终结果
+             */
+            public <U,O> O reduceColumns(final String colnames,final Function<DColumn<T>,U> col_evaluator,
+                final Function<LinkedHashMap<String,U>,O> finisher) {
+                
+                final String names[] =  (colnames!=null)
+                ?   colnames.split("[\\s,\\\\]+")
+                :   this.hh();
+                return this.reduceColumns(names,col_evaluator, finisher);
+            }
+
+            /**
+             * 按照列计算
+             * 使用示例：
+             * final var mx = DataMatrix.of(dd,(IRecord e)->(e).lhm(Double.class));
+             * final var rec = mx.reduceColumns(dblsum,IRecord::REC);
+             * 
+             * @param <U> 中间元素的 对象类型
+             * @param <O> 最终结果的对象类型
+             * @param colnames 用逗号进行分割的列名列表。
+             * @param col_evaluator 中间结果的计算方法
+             * @param finisher 最终结果的变换函数
+             * @return O类型的最终结果
+             */
+            public <U,O> O reduceColumns(final String[] colnames,final Function<DColumn<T>,U> col_evaluator,
+                final Function<LinkedHashMap<String,U>,O> finisher) {
+                final Predicate<DColumn<T>> filter = colnames==null
+                    ? p->true
+                    : p->Arrays.asList(colnames).contains(p.key());
+                return this.reduceColumns(filter, col_evaluator, finisher);
+            }
+
+            /**
+            * 列的多指标变换：即一列变为多列的变换,比如 对于一个矩阵第一列是X,可以变换成 (X,X^2,DX,EX,...) 等一些列的统计指标列。也可以立理解为行展开运算。
+            * @param <U>
+            * @param filter
+            * @param col_evaluator
+            * @return DataMatrix<U>
+            */
+            public <U> DataMatrix<U> flatMapColumns(final Predicate<DColumn<T>> filter,
+                final Function<DColumn<T>,List<DColumn<U>>> col_evaluator){
+                
+                final var ai = new AtomicInteger(0);
+                final var names = this.hh();
+                final Predicate<DColumn<T>> final_filter = filter==null?s->true:filter;
+                List<DColumn<U>> columns= new LinkedList<>();
+                this.lcols().forEach(col->{
+                    final int idx = ai.getAndIncrement(); // 编号
+                    final String name = names[idx];// 键名
+                    final var column = new DColumn<>(name,col);
+                    if(final_filter.test(column)) columns.addAll(col_evaluator.apply(column));
+                });
+                
+                return new DataMatrix<U>(columns,(Class<U>)null);
+            }
+
+            /**
+             * 列的多指标变换：即一列变为多列的变换,比如 对于一个矩阵第一列是X,可以变换成 (X,X^2,DX,EX,...) 等一些列的统计指标列。也可以立理解为行展开运算。
+             * @param <U>
+             * @param filter
+             * @param col_evaluator
+             * @return DataMatrix<U>
+             */
+             public <U> DataMatrix<U> flatMapColumns(final String colnames[],
+                 final Function<DColumn<T>,List<DColumn<U>>> col_evaluator){
+                 
+                 final Predicate<DColumn<T>> final_filter = colnames==null
+                        ?   s->true
+                        :   s->Arrays.asList(colnames).contains(s.getName());
+                 return this.flatMapColumns(final_filter, col_evaluator);
+             }
+
+            /**
+             * 列的多指标变换：即一列变为多列的变换,比如 对于一个矩阵第一列是X,可以变换成 (X,X^2,DX,EX,...) 等一些列的统计指标列。也可以立理解为行展开运算。
+             * @param <U> 变换的值类型
+             * @param filter 过滤器
+             * @param col_evaluator
+             * @return DataMatrix<U>
+             */
+             public <U> DataMatrix<U> flatMapColumns(final String colnames,
+                 final Function<DColumn<T>,List<DColumn<U>>> col_evaluator){
+                 
+                 final Predicate<DColumn<T>> final_filter = colnames==null
+                        ?   s->true
+                        :   s->Arrays.asList(colnames.split("[,\\\\/]+")).contains(s.getName());
+                 return this.flatMapColumns(final_filter, col_evaluator);
+             }
+
+            /**
+              * 列的多指标变换：即一列变为多列的变换,比如 对于一个矩阵第一列是X,可以变换成 (X,X^2,DX,EX,...) 等一些列的统计指标列。也可以立理解为行展开运算。
+              * @param <U> 变换的值类型
+              * @param filter 过滤器
+              * @param col_evaluator
+              * @return DataMatrix<U>
+              */
+             public <U> DataMatrix<U> mapColumns(final String colnames,
+                 final Function<DColumn<T>,DColumn<U>> col_evaluator){
+                 
+                 final Predicate<DColumn<T>> final_filter = colnames==null
+                        ?   s->true
+                        :   s->Arrays.asList(colnames.split("[,\\\\/]+")).contains(s.getName());
+                  return this.flatMapColumns(final_filter, col->Arrays.asList(col_evaluator.apply(col)));
+             }
+
+            /**
+              * 列的多指标变换：即一列变为多列的变换,比如 对于一个矩阵第一列是X,可以变换成 (X,X^2,DX,EX,...) 等一些列的统计指标列。也可以立理解为行展开运算。
+              * @param <U> 变换的值类型
+              * @param filter 过滤器
+              * @param col_evaluator
+              * @return DataMatrix<U>
+              */
+             public <U> DataMatrix<U> mapColumns(final Function<DColumn<T>,DColumn<U>> col_evaluator){
+                 
+                return this.mapColumns(null,col_evaluator);
+             }
+
+            /**
+             * 计算成一个键值对儿 集合
+             * @param <U> 值类型
+             * @param colnames 键名列表用逗号分隔
+             * @param evaluator 列计算函数
+             * @return {[String,U]}的结果序列
+             */
+            public <U> List<KVPair<String,U>> eval2kvs(final String colnames,
+                final Function<DColumn<T>,U> evaluator) {
+                
+                final List<KVPair<String,U>> ll = new LinkedList<>();
+                this.reduceColumns(colnames, evaluator, e->e).forEach((k,u)->{
+                    ll.add(new KVPair<String,U>(k,u));
+                });
+                return ll;
+            }
+
+            /**
+             * 矩阵计算: 使用示例：
+             * 需要引用:DataMatrixApp的V向量函数<br>
+             * <br>
+             * final var alpha = V(10, n -> ((Function&lt;IRecord,IRecord&gt;) e ->REC(n,e))); //函数向量 <br> 
+             * final var beta = alpha.transpose(); // //函数向量 <br> 
+             * final var ff = alpha.mmult2(beta, Function::compose, e->e, Function::compose);//矩阵式的函数组合。 <br>
+             * final var xx = ff.evaluate(e->e.apply(REC("o","-")));<br>
+             * System.out.println(xx); 
+             * <br>
+             * @param <U> 计算结果的元素类型
+             * @param evaluator 计算函数:t->u
+             * @return U类型数据矩阵
+             */
+            @SuppressWarnings("unchecked")
+            public <U> DataMatrix<U> evaluate(Function<T,U> evaluator){
+                U[][] uu = null;// 结果矩阵
+                for (int i = 0; i < this.height(); i++) {
+                    for (int j = 0; j < this.width(); j++) {
+                        final U u = evaluator.apply(this.cells[i][j]);
+                        if (uu == null && u != null) {// 为结果分配存储空间
+                            uu = (U[][]) Array.newInstance(u.getClass(), this.height(), this.width());
+                        }// uu==null
+                        uu[i][j]=u;// 结果数值的返回记录
+                    }// for j
+                }// for i
+                return new DataMatrix<U>(uu,this.header());
+            }
+
+            /**
              * 行遍历
              * @param cs:(row)->{...} 遍历函数
              */ 
@@ -3049,549 +3302,6 @@ public class XlsFile {
             }
             
             /**
-             * 返回数据的列数(水平长度较列数，垂直长度叫行数）
-             * @return this.width;
-             */
-            public int size() {
-                return this.width();
-            }
-
-            /**
-             * 矩阵格式化
-             * @param ident 行内间隔
-             * @param ln 行间间隔
-             * @param cell_formatter 元素格式化
-             * @return 格式化输出的字符串
-             */
-            public String toString(final String ident,final String ln,
-                    final Function<Object,String> cell_formatter) {
-                final Function<Object,String> final_cell_formatter = cell_formatter==null
-                    ?   e->{
-                            var line = "{0}";//数据格式字符串
-                            if(e instanceof Number)
-                                line="{0,number,#}";
-                            else if(e instanceof Date) {
-                                line="{0,Date,yyy-MM-dd HH:mm:ss}";
-                            }
-                            return MessageFormat.format(line, e);
-                        }// 默认的格式化
-                    :   cell_formatter;
-                if( cells == null || cells.length <1 || 
-                    cells[0] == null || cells[0].length<1)return "";
-                final StringBuffer buffer = new StringBuffer();
-                final String headline = this.header().stream().collect(Collectors.joining(ident));
-                if(!headline.matches("\\s*"))
-                buffer.append(headline+ln);
-                for(int i=0;i<cells.length;i++) {
-                    final int n = (cells[i]!=null && cells[i].length>0) ? cells[i].length:0; 
-                    for (int j=0;j<n;j++) {
-                        buffer.append(final_cell_formatter.apply(cells[i][j])+ident);
-                    }
-                    buffer.append(ln);
-                }
-                
-                return buffer.toString();
-            }
-
-            /**
-             * 格式化输出
-             */
-            public String toString() {
-                return toString("\t","\n",null);
-            }
-            
-            /**
-             * 格式化输出
-             */
-            public String toString(Function<Object,String>cell_formatter) {
-                return toString("\t","\n",cell_formatter);
-            }
-            
-            /**
-             * 
-             * @param keysMap
-             */
-            public Map<String,Integer> header2id(final Map<String,Integer> keysMap){
-                this.km = keysMap;
-                return km;
-            }
-            
-            /**
-             * 
-             * @param km
-             */
-            public Map<String,Integer> header2id(final String ss,String delim){
-                // 制定健值映射
-                return this.header2id(Arrays.asList(ss.split(",")));
-            }
-            
-            /**
-             * 设置或获取
-             * @param items 名称集合
-             * @return Map<String,Integer>
-             */
-            public Map<String,Integer> header2id(final List<?> items){
-                final Map<String, Integer> keysMap = new HashMap<String, Integer>();
-                if (items == null) {
-                    final var hh = this.header();
-                    for (int i = 0; i < hh.size(); i++) {
-                        keysMap.put(hh.get(i), i);
-                    }//for
-                    return keysMap;
-                } else {
-                    int i = 0;
-                    for (Object key : items) {
-                        keysMap.put(key + "", i++);
-                    }//for
-                    this.header2id(keysMap);
-                    return keysMap;
-                }// if
-            }
-            
-            /**
-             * 
-             * @param key
-             * @return
-             */
-            public Integer idx(final String key) {
-                return km.get(key);
-            }
-            
-            /**
-             * 获得子集合
-             * @param str excel 格式的cell的名称 1a:3h或者1/1:9/8
-             * @return
-             */
-            public DataMatrix<T> range(final String str) {
-                if(str == null || !str.contains(":")) {
-                    return null;
-                }
-                
-                Function<String,Integer[]> parse = cname->{
-                    cname=cname.trim();
-                    final Pattern p = Pattern.compile("(\\d+)[,/\\s]*([^,/\\s]+)");
-                    final Matcher mat = p.matcher(cname);
-                    if(mat.matches()) {
-                        String row = mat.group(1);
-                        String header = mat.group(2);
-                        
-                        if(TypeU.isNumberic(row)) {
-                            if(!TypeU.isNumberic(header)) {
-                                if(!km.containsKey(header)) {
-                                    header = header.toUpperCase();
-                                    if(!km.containsKey(header)) {// 这个可能是采用地质命名
-                                        Integer[] aa = DataCell.addr2offset(cname);
-                                        if(aa==null)return null;
-                                        header = aa[1]+"";
-                                    }else {// excel 表名解析失败
-                                        header = this.km.get(header)+"";// 使用列名解释
-                                    }
-                                }else {// 使用列名解释
-                                    header = this.km.get(header)+"";
-                                }
-                                
-                            }//if
-                            int i = TypeU.parseNumber(row).intValue();
-                            if(i>0)i--;// 转换成offset地质，从1开始。
-                            return new Integer[] {
-                                i,
-                                TypeU.parseNumber(header).intValue()
-                            };
-                        }//if
-                    }
-                    return null;
-                };
-                
-                final String ss[] = str.split("[:]+");
-                final Integer[] from = parse.apply(ss[0]);
-                final Integer[] to = parse.apply(ss[1]);
-                
-                return this.range(from[0],from[1],to[0],to[1]);
-            }
-            
-            /**
-             * 获得子集合
-             *    从上到下，从左到右
-             * @param i0 从0开始 行坐标 z：左上角奥
-             * @param j0 从0开始 列坐标：左上角
-             * @param i1 包含
-             * @param j1 包含
-             * @return
-             */
-            public DataMatrix<T> range(final int i0,final int j0,final int i1,final int j1){
-                final List<String> hh = this.header().subList(j0,j1+1);
-                return new DataMatrix<>(sub_2darray(this.cells,i0,j0,i1,j1),hh);
-            }
-            
-            /**
-             * 船舰子矩阵
-             * @param cells 对象二维数组
-             * @param i0 从0开始 行坐标
-             * @param j0 从0开始 列坐标
-             * @param i1 包含
-             * @param j1 包含
-             * @return 子矩阵
-             */
-            public T[][] sub_2darray(final T[][] cells, final int i0,final int j0,final int i1,final int j1) {
-                final int h = i1-i0+1;
-                final int w = j1-j0+1;
-                @SuppressWarnings("unchecked")
-                final T[][] cc = (T[][])Array.newInstance(getGenericClass(cells),h,w);
-                for(int i=i0;i<=i1;i++) {
-                    for(int j=j0;j<=j1;j++) {
-                        cc[i-i0][j-j0]=cells[i][j];
-                    }//for
-                }//for
-                return cc;
-            }
-            
-            /**
-             * 船舰子矩阵
-             * @param cells 对象二维数组
-             * @param i0 从0开始
-             * @param j0 从0开始
-             * @param i1 包含
-             * @param j1 包含
-             * @return 子矩阵
-             */
-            public T[][] sub_2darray(final int i0,final int j0,final int i1,final int j1) {
-                int h = i1-i0+1;
-                int w = j1-j0+1;
-                @SuppressWarnings("unchecked")
-                T[][] cc = (T[][])Array.newInstance(getGenericClass(cells),h,w);
-                for(int i=i0;i<=i1;i++) {
-                    for(int j=j0;j<=j1;j++) {
-                        cc[i-i0][j-j0]=cells[i][j];
-                    }//for
-                }//for
-                return cc;
-            }
-            
-            /**
-             * 船舰子矩阵
-             * @param cells 对象二维数组
-             * @param i0 从0开始
-             * @param j0 从0开始
-             * @param i1 包含
-             * @param j1 包含
-             * @return 子矩阵
-             */
-            public T[][] sub_2darray(final T[][] cells,final String rangeName) {
-                RangeDef rangedef = name2range(rangeName);
-                if(rangedef==null)return null;
-                int i0 = rangedef.x0(); int j0 = rangedef.y0();
-                int i1 = rangedef.x1(); int j1 = rangedef.y1();
-                return this.sub_2darray(cells,i0, j0, i1, j1);
-            }
-            
-            /**
-             *  创建子矩阵
-             * rangeName:excel 中的区域命名
-             * @return 子矩阵
-             */
-            public T[][] sub_2darray(final String rangeName) {
-                RangeDef rangedef = name2range(rangeName);
-                if(rangedef==null)return null;
-                int i0 = rangedef.x0(); int j0 = rangedef.y0();
-                int i1 = rangedef.x1(); int j1 = rangedef.y1();
-                return this.sub_2darray(i0, j0, i1, j1);
-            }
-            
-            /**
-             * 获取子矩阵用EXCEL使用坐标
-             * @param i0 从0开始
-             * @param j0 从0开始
-             * @param i1 包含
-             * @param j1 包含
-             * @return 子矩阵
-             */
-            public DataMatrix<T> submx(final int i0,final int j0,final int i1,final int j1) {
-                final int n = j1-j0+1;
-                if(n<=0)return null;
-                final List<String> hh = this.header().stream().limit(n).collect(Collectors.toList());// 表头数据
-                return new DataMatrix<>(this.sub_2darray(i0, j0, i1, j1),hh);
-            }
-            
-            /**
-             * 获取子矩阵用EXCEL命名吧
-             * @param rangeName,比如 A1:B5  -> 0,0:4,2
-             * 注意：rangeName是相对于this矩阵本身的便宜，不要于excel 的sheet 互相混淆。
-             * @return 子矩阵
-             */
-            public DataMatrix<T> submx(final String rangeName) {
-                RangeDef rangedef = name2range(rangeName);
-                if(rangedef==null)return null;
-                final int i0 = rangedef.x0(); final int j0 = rangedef.y0();
-                final int i1 = rangedef.x1(); final int j1 = rangedef.y1();
-                final int n = j1-j0+1;// 区间长度
-                if(n<=0)return null;
-                final List<String> hh = this.header().stream().limit(n).collect(Collectors.toList());// 表头数据
-                System.out.println(rangedef);
-                return new DataMatrix<>(this.sub_2darray(i0, j0, i1, j1),hh);
-            }
-            
-            /**
-             * 根据地址提取单元格中的数据：一个DataCell 就是一个对矩阵数据的数据单元的引用。
-             * @param addr excel 格式的cell的名称/地址。比如A2代表2行1列。相当于索引的(1,0),或者是 用 “/” 或是 “，” 
-             * 分割出来的两个数字。比如 2,3就对应EXCEL的C2命名
-             * @return 指定单元格里面的数据:返回的结果的DataCell 类型的数据。
-             */
-            public DataCell<T> getDataCell(final String addr) {
-                return new DataCell<T>(addr,this.cells);
-            }
-            
-            /**
-             * 提取 addr 所标识区域中的数据
-             * @param addr excel 格式的cell的名称/地址。比如A2代表2行1列。相当于索引的(1,0),或者是 用 “/” 或是 “，” 
-             * 分割出来的两个数字。比如 2,3就对应EXCEL的C2命名
-             * @return addr 所标识区域中的数据：
-             */
-            public T get(final String addr) {
-                return this.getDataCell(addr).get();
-            }
-            
-            /**
-             *  获取单元格内容
-             *  @param i 行名
-             *  @param key 列名
-             *  @return T (i,key) 所标识的数据元素
-             */
-            public T get(final int i,final String key) {
-                if(key==null)return null;
-                final Integer j = idx(key.toUpperCase());
-                if(j==null)return null;
-                return cells[i][j];
-            }
-            
-            /**
-             * 获得第i行的第key 列
-             * @param i 行号，从0开始
-             * @param key 列名
-             * @return Integer (i,key) 所标识的数据元素
-             */
-            public Integer integer(final int i,final String key) {
-                final T t = this.get(i, key);
-                final String s = t+"";
-                if(t==null)return null;
-                final String ints = s.replaceFirst("\\.\\s*[\\d\\s]+$", "");// 去除小数后的值
-                return Integer.parseInt(ints);
-            }
-            
-            /**
-             * 获得第i行的第key 列
-             * @param i 行号，从0开始
-             * @param key 列名
-             * @return long (i,key) 所标识的数据元素
-             */
-            public long lng(final int i,final String key) {
-                final T t = this.get(i, key);
-                final String s = t+"";
-                final String ints = s.replaceFirst("\\.\\s*[\\d\\s]+$", "");// 去除小数后的值
-                return Long.parseLong(ints);
-            }
-            
-            /**
-             * 提取(i,key)之间的元素
-             * 
-             * @param i 航索引从0喀什
-             * @param key 列名
-             * @return double (i,key) 所标识的数据元素
-             */
-            public double dbl(final int i,final String key) {
-                T t = this.get(i, key);
-                final String s = t+"";
-                return Double.parseDouble(s);
-            }
-            
-            
-            /**
-             * 表头，列名序列
-             * 
-             * @return 返回 数据 的表头，列名序列
-             */
-            public String[] hh(){
-                return this.km.entrySet().stream()
-                    .sorted((a,b)->a.getValue()-b.getValue())
-                    .map(e->e.getKey()).toArray(String[]::new);
-            }
-
-            /**
-             * 表头，列名序列
-             * @return 返回 数据 的表头，列名序列
-             */
-            public List<String> header(){
-                return this.km.entrySet().stream()
-                    .sorted((a,b)->a.getValue()-b.getValue())
-                    .map(e->e.getKey()).collect(Collectors.toList());
-            }
-            
-            /**
-             * 设置 表头：列名序列
-             * @param hh 表头,列名序列
-             * @return 当前对象的本身 以实现链式编程
-             */
-            public DataMatrix<T> setHeader(final String ...hh){
-               return this.setHeader(Arrays.asList(hh));
-            }
-            
-            /**
-             * 设置 表头：列名序列
-             * @param hh 表头名称序列，用逗号分隔
-             * @return 当前对象的本身 以实现链式编程
-             */
-            public DataMatrix<T> setHeader(final String hh){
-               return this.setHeader(Arrays.asList(hh.split("[,\\\\/\n]+")));
-            }
-            
-            /**
-             * 设置 表头列表
-             * @return 当前对象的本身 以实现链式编程
-             */
-            public DataMatrix<T> setHeader(final List<String>hh){
-                final int n = this.width();
-                final var final_hh = new LinkedList<String>();
-                if(hh!=null)final_hh.addAll(hh);
-                final var hitr = final_hh.listIterator();
-                for(int i=0;i<n;i++) {// 诸列检查
-                    if(!hitr.hasNext()) {// 使用excelname 来进行补充列表的补填。
-                        hitr.add("_"+excelname(i));// 使用默认的excel名称加入一个下划线前缀
-                    }else {
-                        hitr.next();// 步进到下一个位置
-                    }//if !hitr.hasNext()
-                }//for i
-                this.header2id(final_hh);//表头设置
-                
-                return this;
-            }
-            
-            /**
-             * 列名转列id id 从0开始
-             * @return Map<String, Integer>
-             */
-            public Map<String, Integer> header2id() {
-                return km;
-            }
-
-            /**
-             * id2header
-             * @return Map<Integer, String>
-             */
-            public Map<Integer, String> id2header() {
-                final var i2h = new HashMap<Integer,String>();
-                km.forEach((header,id)->{
-                    i2h.put(id,header);
-                });
-                return i2h;
-            }
-
-            /**
-             * 获取Cell的类型信息
-             * @return Cell的类型信息,即T的Class对象
-             */
-            public Class<T> getCellClass(){
-                return DataMatrix.getGenericClass(cells);
-            }
-
-            /**
-             * 数据矩阵的cells二维数组
-             * @return 数据矩阵的cells二维数组
-             */
-            public T[][] getCells() {
-                return cells;
-            }
-            
-            /**
-             * 需要注意与cell系列方法的区别：cell返回的MatrixCell对象，而getCell返回的是数据元素
-             * 取货  (i,j)位置的元素
-             * @param i 行号索引从0开始
-             * @param j 列号索引从0开始
-             * @return  (i,j)位置的元素 T类型的元素。
-             */
-            public T getCell(int i,int j) {
-                return cells[i][j];
-            }
-            
-            /**
-             * 行顺序的cells一维序列
-             * @return 行顺序的cells一维序列
-             */
-            @SuppressWarnings("unchecked")
-            public T[] getFlatCells() {
-               final Stream<T> tts =  Arrays.stream(this.cells).flatMap(Arrays::stream);
-               return tts.toArray(n->(T[])Array.newInstance(this.getCellClass(),n));
-            }
-            
-            /**
-             * 列顺序的cells一维序列
-             * @return 列顺序的cells一维序列
-             */
-            @SuppressWarnings("unchecked")
-            public T[] getFlatCells2() {
-               final Stream<T> tts =  Arrays.stream(DataMatrix.transpose(this.cells)).flatMap(Arrays::stream);
-               return tts.toArray(n->(T[])Array.newInstance(this.getCellClass(),n));
-            }
-            
-            /**
-             * 提取根据列索引提取列名
-             * @param j 列索引 从0开始
-             * @return j 列索引所对应的列名 
-             */
-            public String getHeaderByColumnIndex(int j) {
-                return this.header().get(j);
-            }
-
-            /**
-             * 强制类型转换
-             * @param cls 目标类类型
-             * @return U类型的DataMatrix<U>
-             */
-            @SuppressWarnings("unchecked")
-            public <U> DataMatrix<U> corece(final Class<U> cls){
-                T[][] cc = this.cells;
-                try {
-                    final U[][] dd = (U[][])cc;// 强制类型转换
-                    return new DataMatrix<U>(dd,this.header());
-                }catch(Exception e) {
-                    return null;
-                }
-            }
-            
-            /**
-             * 类型装换
-             * @param corecer 类型变换函数
-             * @return 类型变换
-             */
-            @SuppressWarnings("unchecked")
-            public <U> DataMatrix<U> corece(final Function<T,U>corecer){
-                T[][] cc = this.cells;
-                try { 
-                    final int m = this.height();
-                    final int n = this.width();
-                    final List<U> ulist = Arrays.stream(cc).flatMap(Arrays::stream).map(corecer)
-                        .collect(Collectors.toList());// 找到一个非空的数据类型
-                    final Optional<Class<U>> opt = ulist.stream().filter(e->e!=null)
-                        .findFirst().map(e->(Class<U>)e.getClass()); // 提取费控的类型
-                    final Class<U> cls = opt.orElseGet(()->(Class<U>)(Object)Object.class);
-                    final U[][] uu = (U[][])Array.newInstance(cls, m,n);
-                    final Iterator<U> itr = ulist.iterator();
-                    for(int i=0;i<m;i++) for(int j=0;j<n;j++) uu[i][j]=itr.hasNext()?itr.next():null;
-                    
-                    return new DataMatrix<U>(uu,this.header());
-                }catch(Exception e) {
-                    return null;
-                }
-            }
-            
-            /**
-             * 增加数据预处理函数，只改变数据内容并改变数据形状shape:比如 无效非法值，缺失值，数字格式化等功能。
-             * @param mapper 行数据映射 LinkedHashMap<String,T>的结构, key->value 
-             */
-            public DataMatrix<T> preProcess(final Consumer<T[]> handler) {
-                for(int i=0;i<this.height();i++)handler.accept(cells[i]);
-                return this;
-            }
-            
-            /**
              * 按照行进行映射
              * @param <U> 目标行记录{(String,T)} 所变换成的结果类型
              * @param mapper 行数据映射 LinkedHashMap<String,T>的结构, key->value 
@@ -3611,15 +3321,64 @@ public class XlsFile {
                     return final_mapper.apply(mm);
                 });// lrows
             }
-            
+
             /**
-             * 按照行进行映射:注意区分 mapRows 变换成另外一个 DataMatrix<U>
-             * @param <U> 目标行记录{(String,T)} 所变换成的结果类型
-             * @param mapper 行数据映射 LinkedHashMap<String,T>的结构, key->value 
-             * @return U 类型的流
+             * 迭代遍历 元素按照表头字段的长度
+             * @param handler 字段处理
              */
-            public <U> Stream<U> mapByRow(final Function<LinkedHashMap<String,T>,U> mapper) {
-                return rowStream(mapper);
+            public void forEach(final Consumer<LinkedHashMap<String,T>> handler) {
+                this.forEach(e->e,handler);
+            }
+
+            /**
+             * 迭代遍历 元素按照表头字段的长度
+             * @param <U> mapper  的返回结构类型
+             * @param mapper 行数据转换器
+             * @param handler 字段处理
+             */
+            public <U> void forEach(final Function<LinkedHashMap<String,T>,U> mapper,final Consumer<U> handler) {
+                final String hh[] = this.header().stream().toArray(String[]::new);
+                final int hn = hh.length;
+                this.rfor(row->{
+                    final int n = row.size();
+                    final LinkedHashMap<String,T> mm = new LinkedHashMap<>();
+                    for(int i=0;i<n;i++) {
+                        String key = hh[i%hn];
+                        T value = row.get(i%hn);
+                        mm.put(key,value); 
+                    }
+                    final U u = mapper.apply(mm);
+                    if(u!=null)handler.accept(u);
+                });
+            }
+
+            /**
+             * 按照行过滤并映射
+             * @param <U> ubuilder 变换结果的类型
+             * @param ubuilder 行数据转换器 把一个LinkedHashMap<String,T> 转换成一个U类型
+             * @param utester 测试:对 u对象进行测试
+             * @return 返回使用utester进行过滤的结果集
+             */
+            public <U> DataMatrix<T> filter(final Function<LinkedHashMap<String,T>,U> ubuilder,
+                final Predicate<U> utester){
+                
+                return filter(e->utester.test(ubuilder.apply(e)));
+            }
+
+            /**
+             * 按照行映射
+             * @param tester 行数据tester
+             * @return 过滤后的数据矩阵
+             */
+            public DataMatrix<T> filter(final Predicate<LinkedHashMap<String,T>> tester){
+                final List<LinkedHashMap<String,T>> ll = new LinkedList<>();
+                this.forEach(rec->{
+                    if(tester.test(rec)) ll.add(rec);
+                });
+                final Collection<List<T>> cc = ll.stream()
+                    .map(e->e.values().stream().collect(Collectors.toList()))
+                    .collect(Collectors.toList());
+                return new DataMatrix<T>(cc,this.header());
             }
 
             /**
@@ -3665,18 +3424,138 @@ public class XlsFile {
             }
             
             /**
-             * 按照行过滤并映射
-             * @param <U> ubuilder 变换结果的类型
-             * @param ubuilder 行数据转换器 把一个LinkedHashMap<String,T> 转换成一个U类型
-             * @param utester 测试:对 u对象进行测试
-             * @return 返回使用utester进行过滤的结果集
+             * 列追加：自动数据延展进行行填充，模仿r语言的数据添加
+             * @param t 追加的行数据
+             * @return 新生成的矩阵
              */
-            public <U> DataMatrix<T> filter(final Function<LinkedHashMap<String,T>,U> ubuilder,
-                final Predicate<U> utester){
-                
-                return filter(e->utester.test(ubuilder.apply(e)));
+            public DataMatrix<T> cbind(final T t) {
+               return this.cbind(t,null);
             }
-            
+
+            /**
+             * 列追加：自动数据延展进行行填充，模仿r语言的数据添加
+             * @param t 追加的行数据
+             * @return 新生成的矩阵
+             */
+            @SuppressWarnings("unchecked")
+            public DataMatrix<T> cbind(final T t,String columnName) {
+                final Class<T> tclass = t!=null?(Class<T>)t.getClass():(Class<T>)(Object)Object.class;
+                final T cc[] = (T[])Array.newInstance(tclass,1);
+                cc[0] = t;// 数据初始化为t 
+                return this.cbind(cc,columnName);
+            }
+
+            /**
+             * 行朱家
+             * @param aa 追加的行数据
+             * @return 新生成的矩阵
+             */
+            public DataMatrix<T> cbind(final T[] aa) {
+                return this.cbind(aa,null);
+            }
+
+            /**
+             * 行朱家
+             * @param columnName 新追加的列的列名
+             * @param aa 追加的行数据
+             * @return 新生成的矩阵
+             */
+            @SuppressWarnings("unchecked")
+            public DataMatrix<T> cbind(final T[] aa,String columnName) {
+                
+                // 避免当 系统吧bind(T[][],...colunames)  当之传入一个列名的时候，把二维数组当成一维数组传过来的情形。
+                // 比如:.cbind(new Integer[][] {{null,1},{2,3}},"C1") 就会传入本函数.加入对aa[0]的类型判断就是把此种情形排除在外。
+                if(aa[0]!=null && aa[0].getClass().isArray()) // 避免
+                        return this.cbind((T[][])aa,columnName);
+                
+                final T[][] uu = cbind(cells,vv2mm(aa));
+                var mm = new DataMatrix<T>(uu,this.header());
+                mm.setColumnNames(this.width(), columnName);
+                return mm;
+            }
+
+            /**
+             * 列追加
+             * @param aa 追加的列数据：多列。
+             * @param columnNames 追加的列名
+             * @return 新生成的矩阵
+             */
+            public DataMatrix<T> cbind(final T[][] aa) {
+                return cbind(aa,(String[])null);
+            }
+
+            /**
+             * 列追加
+             * @param aa 追加的列数据：多列。
+             * @param columnNames 追加的列名
+             * @return 新生成的矩阵
+             */
+            public DataMatrix<T> cbind(final T[][] aa,final String ...columnNames) {
+                final T[][] uu = cbind(cells,aa);
+                final var mm = new DataMatrix<T>(uu,this.header());
+                mm.setColumnNames(this.width(), columnNames);
+                return mm;
+            }
+
+            /**
+             * 列数据合并
+             * @param mm 追加的列数据
+             * @return 新生成的矩阵
+             */
+            public DataMatrix<T> cbind(final DataMatrix<T>mm) {
+                final T[][] uu = cbind(cells,mm.cells);
+                final List<String> header = new LinkedList<>();
+                header.addAll(this.header());
+                header.addAll(mm.header());
+                return new DataMatrix<T>(uu,header);
+            }
+
+            /**
+             * 行追加 :自动数据延展进行行填充，模仿r语言的数据添加
+             * @param t 追加的行数据
+             * @return 新生成的矩阵
+             */
+            @SuppressWarnings("unchecked")
+            public DataMatrix<T> rbind(final T t) {
+                final Class<T> tclass = t!=null?(Class<T>)t.getClass():(Class<T>)(Object)Object.class;
+                final T cc[] = (T[])Array.newInstance(tclass,1);
+                cc[0] = t; // 数据初始化为t 
+                return this.rbind(cc);
+            }
+
+            /**
+             * 行追加
+             * @param aa 追加的行数据
+             * @return 新生成的矩阵
+             */
+            public DataMatrix<T> rbind(final T[] aa) {
+                final T[][] uu = rbind(cells,transpose(vv2mm(aa)));
+                return new DataMatrix<T>(uu,this.header());
+            }
+
+            /**
+             * 行追加
+             * @param aa 行数据：多行
+             * @return 新生成的矩阵
+             */
+            public DataMatrix<T> rbind(final T[][] aa) {
+                final T[][] uu = rbind(cells,aa);
+                return new DataMatrix<T>(uu,this.header());
+            }
+
+            /**
+             * 行追加
+             * @param mm 追加的行数据
+             * @return 新生成的矩阵
+             */
+            public DataMatrix<T> rbind(final DataMatrix<T>mm) {
+                final T[][] uu = rbind(cells,mm.cells);
+                final List<String> header = new LinkedList<>();
+                header.addAll(this.header());
+                header.addAll(mm.header());
+                return new DataMatrix<T>(uu,this.header());
+            }
+
             /**
              * 删除指定 行的数据:对于非法行索引号(小于零或者大于heigh-1,返回不做任何处理的拷贝)
              * @param i 行号，从0开始
@@ -3762,7 +3641,7 @@ public class XlsFile {
             }
             
             /**
-             *  把mm处插入到行 i的位置
+             * 把mm处插入到行 i的位置
              * @param i 列号，从0开始
              * @param column 列元素列表
              * @return 删除掉了i行数的数据矩阵
@@ -3774,198 +3653,55 @@ public class XlsFile {
             }
             
             /**
-             * 按照行映射
-             * @param tester 行数据tester
-             * @return 过滤后的数据矩阵
+             * 把mm处插入到行 i的位置
+             * 
+             * @param j 列号，从0开始
+             * @param column 列元素列表
+             * @param colName 新添加的列名
+             * @return 删除掉了i行数的数据矩阵
              */
-            public DataMatrix<T> filter(final Predicate<LinkedHashMap<String,T>> tester){
-                final List<LinkedHashMap<String,T>> ll = new LinkedList<>();
-                this.forEach(rec->{
-                    if(tester.test(rec)) ll.add(rec);
-                });
-                final Collection<List<T>> cc = ll.stream()
-                    .map(e->e.values().stream().collect(Collectors.toList()))
-                    .collect(Collectors.toList());
-                return new DataMatrix<T>(cc,this.header());
+            public DataMatrix<T> insertColumn(final int j,final List<T> column,String colName){
+                final var col = new DColumn<T>("_"+DataMatrix.excelname(this.width()+1),column);
+                final var mm = new DataMatrix<T>(Arrays.asList(col),this.getCellClass());
+                return this.insertColumns(j, mm).setColumnNames(j,colName);
             }
             
             /**
-             * 矩阵对象
-             * @param <U> creator 的结果类型
-             * @param creator 矩阵生成器
-             * @return 矩阵对象
+             * plus 别名简化前端代码长度
+             * saxpy:this xx,
+             * @param <U> 中间数据类型
+             * @param a 系数
+             * @param y 偏移向量
+             * @return saxpy
              */
-            public <U> U cast(final Function<DataMatrix<T>,U> creator) {
-                return creator.apply(this);
-            }
-            
-            /**
-             * 迭代遍历 元素按照表头字段的长度
-             * @param handler 字段处理
-             */
-            public void forEach(final Consumer<LinkedHashMap<String,T>> handler) {
-                this.forEach(e->e,handler);
-            }
-            
-            /**
-             * 迭代遍历 元素按照表头字段的长度
-             * @param <U> mapper  的返回结构类型
-             * @param mapper 行数据转换器
-             * @param handler 字段处理
-             */
-            public <U> void forEach(final Function<LinkedHashMap<String,T>,U> mapper,final Consumer<U> handler) {
-                final String hh[] = this.header().stream().toArray(String[]::new);
-                final int hn = hh.length;
-                this.rfor(row->{
-                    final int n = row.size();
-                    final LinkedHashMap<String,T> mm = new LinkedHashMap<>();
-                    for(int i=0;i<n;i++) {
-                        String key = hh[i%hn];
-                        T value = row.get(i%hn);
-                        mm.put(key,value); 
-                    }
-                    final U u = mapper.apply(mm);
-                    if(u!=null)handler.accept(u);
-                });
-            }
-            
-            /**
-             * 行追加
-             * @param aa 行数据：多行
-             * @return 新生成的矩阵
-             */
-            public DataMatrix<T> rbind(final T[][] aa) {
-                final T[][] uu = rbind(cells,aa);
-                return new DataMatrix<T>(uu,this.header());
+            public <U extends Number> DataMatrix<T> add(final T y){
+                return this.plus(y);
             }
 
             /**
-             * 行追加
-             * @param mm 追加的行数据
-             * @return 新生成的矩阵
+             * plus 别名简化前端代码长度
+             * saxpy:this xx,
+             * @param <U> 中间数据类型
+             * @param a 系数
+             * @param y 偏移向量
+             * @return saxpy
              */
-            public DataMatrix<T> rbind(final DataMatrix<T>mm) {
-                final T[][] uu = rbind(cells,mm.cells);
-                final List<String> header = new LinkedList<>();
-                header.addAll(this.header());
-                header.addAll(mm.header());
-                return new DataMatrix<T>(uu,this.header());
+            public <U extends Number> DataMatrix<T> add(final T[][]yy){
+                return this.plus(yy);
+            }
+            
+            /**
+             * plus 别名简化前端代码长度
+             * saxpy:this xx,
+             * @param <U> 中间数据类型
+             * @param a 系数
+             * @param y 偏移向量
+             * @return saxpy
+             */
+            public <U extends Number> DataMatrix<T> add(final DataMatrix<T> y){
+                return this.plus(y);
             }
 
-            /**
-             * 列追加
-             * @param aa 追加的列数据：多列。
-             * @return 新生成的矩阵
-             */
-            public DataMatrix<T> cbind(final T[][] aa) {
-                final T[][] uu = cbind(cells,aa);
-                return new DataMatrix<T>(uu,this.header());
-            }
-            
-            /**
-             * 列追加：自动数据延展进行行填充，模仿r语言的数据添加
-             * @param t 追加的行数据
-             * @return 新生成的矩阵
-             */
-            @SuppressWarnings("unchecked")
-            public DataMatrix<T> cbind(final T t) {
-                final Class<T> tclass = t!=null?(Class<T>)t.getClass():(Class<T>)(Object)Object.class;
-                final T cc[] = (T[])Array.newInstance(tclass,1);
-                cc[0] = t;// 数据初始化为t 
-                return this.cbind(cc);
-            }
-
-            /**
-             * 行朱家
-             * @param aa 追加的行数据
-             * @return 新生成的矩阵
-             */
-            public DataMatrix<T> cbind(final T[] aa) {
-                final T[][] uu = cbind(cells,vv2mm(aa));
-                return new DataMatrix<T>(uu,this.header());
-            }
-            
-            /**
-             * 行追加 :自动数据延展进行行填充，模仿r语言的数据添加
-             * @param t 追加的行数据
-             * @return 新生成的矩阵
-             */
-            @SuppressWarnings("unchecked")
-            public DataMatrix<T> rbind(final T t) {
-                final Class<T> tclass = t!=null?(Class<T>)t.getClass():(Class<T>)(Object)Object.class;
-                final T cc[] = (T[])Array.newInstance(tclass,1);
-                cc[0] = t; // 数据初始化为t 
-                return this.rbind(cc);
-            }
-
-
-            /**
-             * 行追加
-             * @param aa 追加的行数据
-             * @return 新生成的矩阵
-             */
-            public DataMatrix<T> rbind(final T[] aa) {
-                final T[][] uu = rbind(cells,transpose(vv2mm(aa)));
-                return new DataMatrix<T>(uu,this.header());
-            }
-
-            /**
-             * 列数据合并
-             * @param mm 追加的列数据
-             * @return 新生成的矩阵
-             */
-            public DataMatrix<T> cbind(final DataMatrix<T>mm) {
-                final T[][] uu = cbind(cells,mm.cells);
-                final List<String> header = new LinkedList<>();
-                header.addAll(this.header());
-                header.addAll(mm.header());
-                return new DataMatrix<T>(uu,header);
-            }
-
-            /**
-             * 矩阵转置,放弃了原来的表头，转置会丧失矩阵表头信息，表明命名法采用使用EXCEL的列名规则进行标识
-             * @return 矩阵转置
-             */
-            public DataMatrix<T> transpose() {
-                return new DataMatrix<>(transpose(cells));
-            }
-            
-            /**
-             * transpose 的别名
-             * 矩阵转置,放弃了原来的表头，转置会丧失矩阵表头信息，表明命名法采用使用EXCEL的列名规则进行标识
-             * @return 矩阵转置
-             */
-            public DataMatrix<T> tp() {
-                return new DataMatrix<>(transpose(cells));
-            }
-            
-            /**
-             * 矩阵转置,放弃了原来的表头，转置会丧失矩阵表头信息，表明命名法采用使用EXCEL的列名规则进行标识
-             * @param hh转放后的列名
-             * @return 矩阵转置
-             */
-            public DataMatrix<T> transpose(final List<String>hh) {
-                return new DataMatrix<>(transpose(cells),hh);
-            }
-            
-            /**
-             * 矩阵转置,放弃了原来的表头，转置会丧失矩阵表头信息，表明命名法采用使用EXCEL的列名规则进行标识
-             * @param hh转放后的列名
-             * @return 矩阵转置
-             */
-            public DataMatrix<T> transpose(final String[] hh) {
-                return new DataMatrix<>(transpose(cells),hh);
-            }
-            
-            /**
-             * 矩阵转置,放弃了原来的表头，转置会丧失矩阵表头信息，表明命名法采用使用EXCEL的列名规则进行标识
-             * @param hh转放后的列名,分隔符默认为"[,\\\\/]+" 
-             * @return 矩阵转置
-             */
-            public DataMatrix<T> transpose(final String hh) {
-                return new DataMatrix<>(transpose(cells),hh.split("[,\\\\/]+"));
-            }
-            
             /**
              * saxpy:this xx,
              * @param <U> 中间数据类型
@@ -3980,7 +3716,7 @@ public class XlsFile {
                 yy[0][0]=y;
                 return this.saxpy((T)(Object)1,yy);
             }
-
+            
             /**
              * saxpy:this xx,
              * @param <U> 中间数据类型
@@ -4003,6 +3739,38 @@ public class XlsFile {
             @SuppressWarnings("unchecked")
             public <U extends Number> DataMatrix<T> plus(final DataMatrix<T> y){
                 return this.saxpy((T)(Object)1,y.cells);
+            }
+            
+            /**
+             * minus 别名简化前端代码长度
+             * 矩阵减法,减去: this - subtractor 
+             * @param <U> 中间过渡计算的数据类型
+             * @param subtractor 减数
+             * @return 差矩阵
+             */
+            public <U extends Number> DataMatrix<T> sub(final T subtractor){
+                return this.minus(subtractor);
+            }
+            
+            /**
+             * minus 别名简化前端代码长度
+             * 矩阵减法,减去: this - subtractor
+             * @param <U> 中间过渡计算的数据类型
+             * @param subtractor 减数
+             * @return 差矩阵
+             */
+            public <U extends Number> DataMatrix<T> sub(T[][] subtractor){
+                return this.minus(subtractor);
+            }
+            
+            /**
+             * 矩阵减法 ,减去:this - subtractor
+             * @param <U> 中间过渡计算的数据类型
+             * @param subtractor 减数
+             * @return 差矩阵
+             */
+            public <U extends Number> DataMatrix<T> sub(DataMatrix<T> subtractor){
+                return this.minus(subtractor);
             }
 
             /**
@@ -4037,6 +3805,40 @@ public class XlsFile {
             public <U extends Number> DataMatrix<T> minus(DataMatrix<T> subtractor){
                 return this.plus(subtractor.multiply((T)(Number)(-1.0)));
             }
+            
+            /**
+             * minus2 别名简化前端代码长度
+             * 矩阵减法: 被减,subtrahend - this  
+             * @param <U> 中间过渡计算的数据类型
+             * @param subtractor 减数
+             * @return 差矩阵
+             */
+            public <U extends Number> DataMatrix<T> sub2(final T subtrahend){
+               return this.minus2(subtrahend);
+            }
+            
+            /**
+             * minus2 别名简化前端代码长度
+             * 矩阵减法:被减,subtrahend - this  
+             * @param <U> 中间过渡计算的数据类型
+             * @param subtractor 减数
+             * @return 差矩阵
+             */
+            public <U extends Number> DataMatrix<T> sub2(T[][] subtrahend){
+                return this.minus2(subtrahend);
+            }
+            
+            /**
+             * minus2 别名简化前端代码长度
+             * 矩阵减法:被减, subtrahend - this 
+             * @param <U> 中间过渡计算的数据类型
+             * @param subtractor 减数
+             * @return 差矩阵
+             */
+            @SuppressWarnings("unchecked")
+            public <U extends Number> DataMatrix<T> sub2(DataMatrix<T> subtrahend){
+               return this.multiply((T)(Object)(-1.0)).plus(subtrahend);
+            }
 
             /**
              * 矩阵减法: 被减,subtrahend - this  
@@ -4044,9 +3846,8 @@ public class XlsFile {
              * @param subtractor 减数
              * @return 差矩阵
              */
-            @SuppressWarnings("unchecked")
             public <U extends Number> DataMatrix<T> minus2(final T subtrahend){
-               return this.multiply((T)(Object)(-1.0)).plus(subtrahend);
+               return this.minus2(subtrahend);
             }
 
             /**
@@ -4069,6 +3870,84 @@ public class XlsFile {
             @SuppressWarnings("unchecked")
             public <U extends Number> DataMatrix<T> minus2(DataMatrix<T> subtrahend){
                return this.multiply((T)(Object)(-1.0)).plus(subtrahend);
+            }
+            
+            /**
+             * multiply:别名简化前端代码长度,用于向量书写
+             * 矩阵点乘积  dot product
+             * saxpy:this xx,
+             * @param <U> 中间数据类型
+             * @param a 系数
+             * @param y 偏移向量
+             * @return saxpy
+             */
+            public <U extends Number> DataMatrix<T> dot(final T a){
+                return multiply(a);
+            }
+            
+            /**
+             * multiply:别名简化前端代码长度,用于向量书写
+             * 矩阵点乘积  dot product
+             * saxpy:this is xx,
+             * @param <U> 中间数据类型
+             * @param a 系数
+             * @param y 偏移向量
+             * @return saxpy
+             */
+            public <U extends Number> DataMatrix<T> dot(final T[][] yy){
+                return multiply(yy);
+            }
+            
+            /**
+             * multiply:别名简化前端代码长度,用于向量书写
+             * 矩阵点乘积  dot product
+             * saxpy:this is xx,
+             * @param <U> 中间数据类型
+             * @param a 系数
+             * @param y 偏移向量
+             * @return saxpy
+             */
+            public <U extends Number> DataMatrix<T> dot(final DataMatrix<T> y){
+                return multiply(y);
+            }
+            
+            /**
+             * multiply:别名简化前端代码长度
+             * 矩阵点乘积  dot product
+             * saxpy:this xx,
+             * @param <U> 中间数据类型
+             * @param a 系数
+             * @param y 偏移向量
+             * @return saxpy
+             */
+            public <U extends Number> DataMatrix<T> mul(final T a){
+                return multiply(a);
+            }
+            
+            /**
+             * multiply:别名简化前端代码长度
+             * 矩阵点乘积  dot product
+             * saxpy:this is xx,
+             * @param <U> 中间数据类型
+             * @param a 系数
+             * @param y 偏移向量
+             * @return saxpy
+             */
+            public <U extends Number> DataMatrix<T> mul(final T[][] yy){
+                return multiply(yy);
+            }
+            
+            /**
+             * multiply:别名简化前端代码长度
+             * 矩阵点乘积  dot product
+             * saxpy:this is xx,
+             * @param <U> 中间数据类型
+             * @param a 系数
+             * @param y 偏移向量
+             * @return saxpy
+             */
+            public <U extends Number> DataMatrix<T> mul(final DataMatrix<T> y){
+                return multiply(y);
             }
 
             /**
@@ -4183,6 +4062,367 @@ public class XlsFile {
             }
 
             /**
+             * 矩阵乘法
+             * @param <U> 中间结果计算类型
+             * @param mm 右乘矩阵
+             * @param hh 生成矩阵的列名序列, 用逗号分隔
+             * @return DataMatrix<T> 的结果矩阵
+             */
+            @SuppressWarnings("unchecked")
+            public <U extends Number> DataMatrix<T> mmult(final DataMatrix<T> mm,final List<String> hh) {
+                
+                if (!(cells[0][0] instanceof Number) || !(mm.cells[0][0] instanceof Number))
+                    return null;
+                final T[][] tt = (T[][]) DataMatrix.mmult((U[][]) this.cells, (U[][]) mm.cells);   
+                
+                return new DataMatrix<T>(tt, hh == null ? mm.header() : hh);
+            }
+
+            /**
+             * 矩阵乘法
+             * @param mm 右乘矩阵
+             * @param hh 生成矩阵的列名序列, 用逗号分隔
+             * @return DataMatrix<T>
+             */
+            public DataMatrix<T> mmult(final DataMatrix<T> mm,final String hh) {
+                
+                return mmult(mm,hh==null?null:Arrays.asList(hh.split("[,\\\\/]+")));
+            }
+
+            /**
+             * 矩阵乘法
+             * @param mm 右乘矩阵
+             * @param hh 生成矩阵的列名序列, 用逗号分隔
+             * @return DataMatrix<T>
+             */
+            public DataMatrix<T> mmult(final DataMatrix<T> mm,final String[] hh) {
+                
+                return mmult(mm,hh==null?null:Arrays.asList(hh));
+            }
+
+            /**
+             * 矩阵乘法
+             * @param m1 右乘矩阵
+             * @return DataMatrix<T>
+             */
+            public DataMatrix<T> mmult(final DataMatrix<T> m1) {
+               return mmult(m1,(List<String>)null);
+            }
+
+            /**
+             * 使用示例:需要结合DataMatrix的V与tmc 和 LittleTree的IRecord,从这个函数可以看出 
+             * DataMatrix 与 IRecord 既是可以亲密无间的，又可以是独立存在的。 <br>
+             * <br>
+             *  final var alpha = V(10, n -> ((Function &lt; Object,Object &gt;) e -> n + ":" + e)); //函数向量 <br>
+             *  final var beta = alpha.transpose(); // //函数向量 <br>
+             *  final var ff = alpha.mmult2(beta, Function::compose, e->e, Function::compose);// 矩阵式的函数组合。 <br>
+             *  final var xx = ff.mapByRow(IRecord::REC).map(e -> { <br>
+             *  &nbsp;&nbsp; @SuppressWarnings("unchecked")<br>
+             *  &nbsp;&nbsp; final var r = e.applyOnValues(f->((Function&lt;Object, Object&gt;)f).apply(REC())); <br>
+             *  &nbsp;&nbsp; System.out.println(r);<br>
+             *  &nbsp;&nbsp; return REC(r);<br>
+             *  }).collect(tmc(IRecord.class));<br>
+             *  System.out.println(xx); <br>
+             * <br>
+             *  
+             * 通用的:矩阵乘法
+             * @param <T> 左矩阵的元素类型
+             * @param <U> 右矩阵的元素类型
+             * @param <V> 结果矩阵的元素类型
+             * @param mm 右矩阵
+             * @param product_operator 乘法算子
+             * @param identity 零元元素
+             * @param op 累加元素运算
+             * @param hh 生成矩阵的列名序列, 用逗号分隔
+             * @return 以V为元素的矩阵：行数与与this 相同，列数与 mm的列数相同
+             */
+            public <U,V> DataMatrix<V> mmult2(final DataMatrix<U> mm, final BiFunction<T,U,V> product_operator, 
+                final V identity, final BinaryOperator<V> op,final List<String> hh) {
+                
+                final V[][] vv= DataMatrix.mmult2(this.cells, mm.cells, product_operator, identity, op);
+                return new DataMatrix<V>(vv,hh==null?mm.header():hh);
+            }
+
+            /**
+             * 使用示例:需要结合DataMatrix的V与tmc 和 LittleTree的IRecord,从这个函数可以看出 
+             * DataMatrix 与 IRecord 既是可以亲密无间的，又可以是独立存在的。 <br>
+             * <br>
+             *  final var alpha = V(10, n -> ((Function &lt; Object,Object &gt;) e -> n + ":" + e)); //函数向量 <br>
+             *  final var beta = alpha.transpose(); // //函数向量 <br>
+             *  final var ff = alpha.mmult2(beta, Function::compose, e->e, Function::compose);// 矩阵式的函数组合。 <br>
+             *  final var xx = ff.mapByRow(IRecord::REC).map(e -> { <br>
+             *  &nbsp;&nbsp; @SuppressWarnings("unchecked")<br>
+             *  &nbsp;&nbsp; final var r = e.applyOnValues(f->((Function&lt;Object, Object&gt;)f).apply(REC())); <br>
+             *  &nbsp;&nbsp; System.out.println(r);<br>
+             *  &nbsp;&nbsp; return REC(r);<br>
+             *  }).collect(tmc(IRecord.class));<br>
+             *  System.out.println(xx); <br>
+             * <br>
+             * 通用的:矩阵乘法
+             * @param <T> 左矩阵的元素类型
+             * @param <U> 右矩阵的元素类型
+             * @param <V> 结果矩阵的元素类型
+             * @param mm 右矩阵
+             * @param product_operator 乘法算子
+             * @param identity 零元元素
+             * @param op 累加元素运算
+             * @return 以V为元素的矩阵：行数与与this 相同，列数与 mm的列数相同
+             */
+            public <U,V> DataMatrix<V> mmult2(final DataMatrix<U> mm, final BiFunction<T,U,V> product_operator, 
+                final V identity,BinaryOperator<V> op) {
+                
+                return this.mmult2(mm, product_operator, identity, op, null);
+            }
+
+            /**
+             * 使用示例:需要结合DataMatrix的V与tmc 和 LittleTree的IRecord,从这个函数可以看出 
+             * DataMatrix 与 IRecord 既是可以亲密无间的，又可以是独立存在的。 <br>
+             * <br>
+             *  final var alpha = V(10, n -> ((Function &lt; Object,Object &gt;) e -> n + ":" + e)); //函数向量 <br>
+             *  final var beta = alpha.transpose(); // //函数向量 <br>
+             *  final var ff = alpha.mmult2(beta, Function::compose, e->e, Function::compose);// 矩阵式的函数组合。 <br>
+             *  final var xx = ff.mapByRow(IRecord::REC).map(e -> { <br>
+             *  &nbsp;&nbsp; @SuppressWarnings("unchecked")<br>
+             *  &nbsp;&nbsp; final var r = e.applyOnValues(f->((Function&lt;Object, Object&gt;)f).apply(REC())); <br>
+             *  &nbsp;&nbsp; System.out.println(r);<br>
+             *  &nbsp;&nbsp; return REC(r);<br>
+             *  }).collect(tmc(IRecord.class));<br>
+             *  System.out.println(xx); <br>
+             * <br>
+             * 
+             * 通用的:矩阵乘法
+             * @param <T> 左矩阵的元素类型
+             * @param <U> 右矩阵的元素类型
+             * @param <V> 结果矩阵的元素类型
+             * @param mm 右矩阵
+             * @param product_operator 乘法算子
+             * @param identity 零元元素
+             * @param op 累加元素运算
+             * @param hh 生成矩阵的列名序列, 用逗号分隔
+             * @return 以V为元素的矩阵：行数与与this 相同，列数与 mm的列数相同
+             */
+            public <U,V> DataMatrix<V> mmult2(final U[][] mm, final BiFunction<T,U,V> product_operator,
+                final V identity,BinaryOperator<V> op, final List<String> hh) {
+                
+                final V[][] vv= DataMatrix.mmult2(this.cells, mm, product_operator, identity, op);
+                
+                return new DataMatrix<V>(vv,hh==null?this.header():hh);
+            }
+
+            /**
+             * 使用示例:需要结合DataMatrix的V与tmc 和 LittleTree的IRecord,从这个函数可以看出 
+             * DataMatrix 与 IRecord 既是可以亲密无间的，又可以是独立存在的。 <br>
+             * <br>
+             *  final var alpha = V(10, n -> ((Function &lt; Object,Object &gt;) e -> n + ":" + e)); //函数向量 <br>
+             *  final var beta = alpha.transpose(); // //函数向量 <br>
+             *  final var ff = alpha.mmult2(beta, Function::compose, e->e, Function::compose);// 矩阵式的函数组合。 <br>
+             *  final var xx = ff.mapByRow(IRecord::REC).map(e -> { <br>
+             *  &nbsp;&nbsp; @SuppressWarnings("unchecked")<br>
+             *  &nbsp;&nbsp; final var r = e.applyOnValues(f->((Function&lt;Object, Object&gt;)f).apply(REC())); <br>
+             *  &nbsp;&nbsp; System.out.println(r);<br>
+             *  &nbsp;&nbsp; return REC(r);<br>
+             *  }).collect(tmc(IRecord.class));<br>
+             *  System.out.println(xx); <br>
+             * <br>
+             * 
+             * 通用的:矩阵乘法
+             * @param <T> 左矩阵的元素类型
+             * @param <U> 右矩阵的元素类型
+             * @param <V> 结果矩阵的元素类型
+             * @param mm 右矩阵
+             * @param product_operator 乘法算子
+             * @param identity 零元元素
+             * @param op 累加元素运算
+             * @return 以V为元素的矩阵：行数与与this 相同，列数与 mm的列数相同
+             */
+            public <U,V> DataMatrix<V> mmult2(final U[][] mm, final BiFunction<T,U,V> product_operator,
+                final V identity,BinaryOperator<V> op) {
+                
+                return this.mmult2(mm, product_operator, identity, op);
+            }
+
+            /**
+             * 矩阵乘法
+             * 
+             * 返回矩阵的表头默认使用ruu的表头
+             * 
+             * @param <T> 左矩阵的元素类型
+             * @param <U> 右矩阵的元素类型
+             * @param <V> 中间结果矩阵的元素类型
+             * @param <O> 最终结果矩阵的元素类型
+             * @param ltt 左边的T类型矩阵
+             * @param ruu 右边的U类型矩阵
+             * @param product_operator T类型与U类型的向V类型进行映射的二元函数 (t,u)->v, 
+             * @param reducer V类型集合向O类型元素进行映射的多元函数 (...vvv)->o
+             * 
+             * @return O 类型的矩阵
+             */
+            public <U,V,O> DataMatrix<O> mmult2(final DataMatrix<U>ruu, final BiFunction<T,U,V> product_operator,
+                final Function<Stream<V>,O>reducer){
+                
+                if(ruu==null) {
+                    System.err.println("不能对空矩阵做乘法运算");
+                    return null;
+                }
+                
+                final var _ltt = this.getCells();
+                final var _ruu = ruu.getCells();
+                final var _mm = DataMatrix.mmult2(_ltt,_ruu,product_operator,reducer);
+                
+                return new DataMatrix<>(_mm);
+            }
+
+            /**
+             * 矩阵乘法
+             * 
+             * @param <T> 左矩阵的元素类型
+             * @param <U> 右矩阵的元素类型
+             * @param <V> 中间结果矩阵的元素类型
+             * @param <O> 最终结果矩阵的元素类型
+             * @param ltt 左边的T类型矩阵
+             * @param ruu 右边的U类型矩阵
+             * @param product_operator T类型与U类型的向V类型进行映射的二元函数 (t,u)->v, 
+             * @param reducer V类型集合向O类型元素进行映射的多元函数 (...vvv)->o
+             * @param hh 返回矩阵的表头 hh 结果矩阵的列头名序列,或者叫做表头,当null时候默认使用ruu的表头
+             * @return O 类型的矩阵
+             */
+            public <U,V,O> DataMatrix<O> mmult2(final DataMatrix<U> ruu, final BiFunction<T,U,V> product_operator,
+                final Function<Stream<V>,O>reducer,final List<String> hh){
+                
+                if(ruu==null) {
+                    System.err.println("不能对空矩阵做乘法运算");
+                    return null;
+                }
+                
+                final var _ltt = this.getCells();
+                final var _ruu = ruu.getCells();
+                final var _mm = mmult2(_ltt,_ruu,product_operator,reducer);
+                
+                return new DataMatrix<>(_mm).setHeader(hh==null ?ruu.header() :hh);
+            }
+
+            /**
+             * 矩阵乘法
+             * 
+             * @param <T> 左矩阵的元素类型
+             * @param <U> 右矩阵的元素类型
+             * @param <V> 中间结果矩阵的元素类型
+             * @param <O> 最终结果矩阵的元素类型
+             * @param ltt 左边的T类型矩阵
+             * @param ruu 右边的U类型矩阵
+             * @param product_operator T类型与U类型的向V类型进行映射的二元函数 (t,u)->v, 
+             * @param reducer V类型集合向O类型元素进行映射的多元函数 (...vvv)->o
+             * @param hh 返回矩阵的表头 hh 结果矩阵的列头名序列,或者叫做表头,当null时候默认使用ruu的表头
+             * @return O 类型的矩阵
+             */
+            public <U,V,O> DataMatrix<O> mmult2(final DataMatrix<T>ltt, final DataMatrix<U> ruu,
+                final BiFunction<T,U,V> product_operator, final Function<Stream<V>,O>reducer, final List<String> hh){
+                
+                if(ltt==null||ruu==null) {
+                    System.err.println("不能对空矩阵做乘法运算");
+                    return null;
+                }
+                
+                final var _ltt = ltt.getCells();
+                final var _ruu = ruu.getCells();
+                final var _mm = mmult2(_ltt,_ruu,product_operator,reducer);
+                
+                return new DataMatrix<>(_mm).setHeader(hh==null ?ruu.header() :hh);
+            }
+
+            /**
+             * 矩阵乘法:列表类型的参数聚合reducer
+             * 
+             * 返回矩阵的表头默认使用ruu的表头
+             * 
+             * @param <T> 左矩阵的元素类型
+             * @param <U> 右矩阵的元素类型
+             * @param <V> 中间结果矩阵的元素类型
+             * @param <O> 最终结果矩阵的元素类型
+             * @param ltt 左边的T类型矩阵
+             * @param ruu 右边的U类型矩阵
+             * @param product_operator T类型与U类型的向V类型进行映射的二元函数 (t,u)->v, 
+             * @param reducer V类型集合向O类型元素进行映射的多元函数 (...vvv)->o
+             * 
+             * @return O 类型的矩阵
+             */
+            public <U,V,O> DataMatrix<O> lmmult2(final DataMatrix<U>ruu, final BiFunction<T,U,V> product_operator,
+                final Function<List<V>,O>reducer){
+                
+                if(ruu==null) {
+                    System.err.println("不能对空矩阵做乘法运算");
+                    return null;
+                }
+                
+                final var _ltt = this.getCells();
+                final var _ruu = ruu.getCells();
+                final var _mm = mmult2(_ltt,_ruu,product_operator,
+                    stream->reducer.apply(stream.collect(Collectors.toList())));
+                
+                return new DataMatrix<>(_mm);
+            }
+
+            /**
+             * 矩阵乘法:列表类型的参数聚合reducer:列表类型的参数聚合reducer
+             * 
+             * @param <T> 左矩阵的元素类型
+             * @param <U> 右矩阵的元素类型
+             * @param <V> 中间结果矩阵的元素类型
+             * @param <O> 最终结果矩阵的元素类型
+             * @param ltt 左边的T类型矩阵
+             * @param ruu 右边的U类型矩阵
+             * @param product_operator T类型与U类型的向V类型进行映射的二元函数 (t,u)->v, 
+             * @param reducer V类型集合向O类型元素进行映射的多元函数 (...vvv)->o
+             * @param hh 返回矩阵的表头 hh 结果矩阵的列头名序列,或者叫做表头,当null时候默认使用ruu的表头
+             * @return O 类型的矩阵
+             */
+            public <U,V,O> DataMatrix<O> lmmult2(final DataMatrix<U> ruu, final BiFunction<T,U,V> product_operator,
+                final Function<List<V>,O>reducer,final List<String> hh){
+                
+                if(ruu==null) {
+                    System.err.println("不能对空矩阵做乘法运算");
+                    return null;
+                }
+                
+                final var _ltt = this.getCells();
+                final var _ruu = ruu.getCells();
+                final var _mm = mmult2(_ltt,_ruu,product_operator,
+                    stream->reducer.apply(stream.collect(Collectors.toList())));
+                
+                return new DataMatrix<>(_mm).setHeader(hh==null ?ruu.header() :hh);
+            }
+
+            /**
+             * 矩阵乘法
+             * 
+             * @param <T> 左矩阵的元素类型
+             * @param <U> 右矩阵的元素类型
+             * @param <V> 中间结果矩阵的元素类型
+             * @param <O> 最终结果矩阵的元素类型
+             * @param ltt 左边的T类型矩阵
+             * @param ruu 右边的U类型矩阵
+             * @param product_operator T类型与U类型的向V类型进行映射的二元函数 (t,u)->v, 
+             * @param reducer V类型集合向O类型元素进行映射的多元函数 (...vvv)->o
+             * @param hh 返回矩阵的表头 hh 结果矩阵的列头名序列,或者叫做表头,当null时候默认使用ruu的表头
+             * @return O 类型的矩阵
+             */
+            public <U,V,O> DataMatrix<O> lmmult2(final DataMatrix<T>ltt, final DataMatrix<U> ruu,
+                final BiFunction<T,U,V> product_operator, final Function<List<V>,O>reducer, final List<String> hh){
+                
+                if(ltt==null||ruu==null) {
+                    System.err.println("不能对空矩阵做乘法运算");
+                    return null;
+                }
+                
+                final var _ltt = ltt.getCells();
+                final var _ruu = ruu.getCells();
+                final var _mm = mmult2(_ltt,_ruu,product_operator,
+                    stream->reducer.apply(stream.collect(Collectors.toList())));
+                
+                return new DataMatrix<>(_mm).setHeader(hh==null ?ruu.header() :hh);
+            }
+
+            /**
              * saxpy:this xx,
              * @param <U> 中间数据类型
              * @param a 系数
@@ -4226,11 +4466,93 @@ public class XlsFile {
              * @return saxpy
              */
             @SuppressWarnings("unchecked")
-            public <U extends Number> DataMatrix<T> adjugate(){
-                final U[][] uu = DataMatrix.adjugate((U[][])this.cells);
+            public <U extends Number> DataMatrix<T> saxpy2(final T a,final T[][] xx){
+                final U[][] yy = (U[][])this.cells;
+                final U[][] uu = DataMatrix.saxpy((U)a, (U[][])xx,yy);
                 return new DataMatrix<>((T[][])uu);
             }
-            
+
+            /**
+             * transpose 的别名
+             * 矩阵转置,放弃了原来的表头，转置会丧失矩阵表头信息，表明命名法采用使用EXCEL的列名规则进行标识
+             * @return 矩阵转置
+             */
+            public DataMatrix<T> tp() {
+                return new DataMatrix<>(transpose(cells));
+            }
+
+            /**
+             * 矩阵转置,放弃了原来的表头，转置会丧失矩阵表头信息，表明命名法采用使用EXCEL的列名规则进行标识
+             * @return 矩阵转置
+             */
+            public DataMatrix<T> transpose() {
+                return new DataMatrix<>(transpose(cells));
+            }
+
+            /**
+             * 矩阵转置,放弃了原来的表头，转置会丧失矩阵表头信息，表明命名法采用使用EXCEL的列名规则进行标识
+             * @param hh转放后的列名,分隔符默认为"[,\\\\/]+" 
+             * @return 矩阵转置
+             */
+            public DataMatrix<T> transpose(final String hh) {
+                return new DataMatrix<>(transpose(cells),hh.split("[,\\\\/]+"));
+            }
+
+            /**
+             * 矩阵转置,放弃了原来的表头，转置会丧失矩阵表头信息，表明命名法采用使用EXCEL的列名规则进行标识
+             * @param hh转放后的列名
+             * @return 矩阵转置
+             */
+            public DataMatrix<T> transpose(final String[] hh) {
+                return new DataMatrix<>(transpose(cells),hh);
+            }
+
+            /**
+             * 矩阵转置,放弃了原来的表头，转置会丧失矩阵表头信息，表明命名法采用使用EXCEL的列名规则进行标识
+             * @param hh转放后的列名
+             * @return 矩阵转置
+             */
+            public DataMatrix<T> transpose(final List<String>hh) {
+                return new DataMatrix<>(transpose(cells),hh);
+            }
+
+            /**
+             * 协方差矩阵
+             * @return 协方差矩阵
+             */
+            @SuppressWarnings("unchecked")
+            public DataMatrix<T> cov(){
+                final var shape = this.shape();
+                final var eXY = this.tp().mmult(this).div((T)shape._1());
+                final var eX = this.mapColumns(col->COL((T)col.mean()));
+                final var eXeY = eX.tp().mmult(eX);
+                
+                return eXY.minus(eXeY);
+            }
+
+            /**
+             * 协方差矩阵
+             * @return 协方差矩阵
+             */
+            @SuppressWarnings("unchecked")
+            public DataMatrix<T> cor(){
+                final var sigma = this.mapColumns(col->COL((T)col.std_p()));// 标准差向量
+                return this.cov().div(sigma.tp().mmult(sigma));
+            }
+
+            /**
+             * 矩阵乘法
+             * 
+             * @param <U> 数据类型：编译辅助类。
+             * @param m1 右乘矩阵
+             * @param hh 生成矩阵的列名
+             * @return DataMatrix<T>
+             */
+            @SuppressWarnings("unchecked")
+            public <U extends Number> T det(){
+               return (T)DataMatrix.det((U[][])this.cells);
+            }
+
             /**
              * 求矩阵的逆矩阵
              * @param <U> 中间数据类型
@@ -4250,12 +4572,64 @@ public class XlsFile {
              * @return saxpy
              */
             @SuppressWarnings("unchecked")
-            public <U extends Number> DataMatrix<T> saxpy2(final T a,final T[][] xx){
-                final U[][] yy = (U[][])this.cells;
-                final U[][] uu = DataMatrix.saxpy((U)a, (U[][])xx,yy);
+            public <U extends Number> DataMatrix<T> adjugate(){
+                final U[][] uu = DataMatrix.adjugate((U[][])this.cells);
                 return new DataMatrix<>((T[][])uu);
             }
             
+            /**
+             * 格式化输出
+             */
+            public String toString() {
+                return toString("\t","\n",null);
+            }
+
+            /**
+             * 格式化输出
+             */
+            public String toString(Function<Object,String>cell_formatter) {
+                return toString("\t","\n",cell_formatter);
+            }
+
+            /**
+             * 矩阵格式化
+             * @param ident 行内间隔
+             * @param ln 行间间隔
+             * @param cell_formatter 元素格式化
+             * @return 格式化输出的字符串
+             */
+            public String toString(final String ident,final String ln,
+                    final Function<Object,String> cell_formatter) {
+                final Function<Object,String> final_cell_formatter = cell_formatter==null
+                    ?   e->{
+                            var line = "{0}";//数据格式字符串
+                            if(e instanceof Number)
+                                line= (e instanceof Integer || e instanceof Long)
+                                ? "{0,number,#}"
+                                : "{0,number,0.##}";
+                            else if(e instanceof Date) {
+                                line="{0,Date,yyy-MM-dd HH:mm:ss}";
+                            }
+                            return MessageFormat.format(line, e);
+                        }// 默认的格式化
+                    :   cell_formatter;
+                if( cells == null || cells.length <1 || 
+                    cells[0] == null || cells[0].length<1)return "";
+                final StringBuffer buffer = new StringBuffer();
+                final String headline = this.header().stream().collect(Collectors.joining(ident));
+                if(!headline.matches("\\s*"))
+                buffer.append(headline+ln);
+                for(int i=0;i<cells.length;i++) {
+                    final int n = (cells[i]!=null && cells[i].length>0) ? cells[i].length:0; 
+                    for (int j=0;j<n;j++) {
+                        buffer.append(final_cell_formatter.apply(cells[i][j])+ident);
+                    }
+                    buffer.append(ln);
+                }
+                
+                return buffer.toString();
+            }
+
             /**
              * 生成一个 DataMatrix
              * 
@@ -4382,6 +4756,51 @@ public class XlsFile {
             }
 
             /**
+             * 数字类型转换
+             * @param <U> 目标类型
+             * @param number 数字
+             * @param targetClass 目标类型
+             */
+            @SuppressWarnings("unchecked")
+            public static <U extends Number> U cast(Number number,Class<U>targetClass){
+                if(targetClass==Integer.class)
+                    return (U)(Object)number.intValue();
+                else if(targetClass==Double.class) {
+                    return (U)(Object)number.doubleValue();
+                }else if(targetClass==Float.class) {
+                    return (U)(Object)number.floatValue();
+                }else if(targetClass==Long.class) {
+                    return (U)(Object)number.longValue();
+                }else {
+                    return (U)(Object)number.doubleValue();
+                }
+            }
+
+            /**
+             * 类型转换 强制类型转换:静态类型转换
+             * @param <U> 目标类型的类
+             * @param clazz 目标类型
+             * @return Function<Object,LinkedHashMap<String,U>>
+             */
+            @SuppressWarnings("unchecked")
+            public static <U> Function<Object,LinkedHashMap<String,U>> lhm_cast (final Class<U> clazz){
+                return obj->(LinkedHashMap<String,U>)obj;
+            }
+
+            /**
+             * 创建  m * n 的二维数组
+             * @param <U> 元素类型
+             * @param ucls 元素类型的class
+             * @param m 行数
+             * @param n 列数
+             * @return U[][]
+             */
+            @SuppressWarnings("unchecked")
+            public static <U> U[][] newArray(final Class<U> ucls,final int m,final int n){
+                return (U [][] )Array.newInstance(ucls, m,n);
+            }
+
+            /**
              * 删除数组的第一行
              * @param cells
              * @return
@@ -4409,11 +4828,12 @@ public class XlsFile {
              * 如果cells中的所有元素都是null,返回Object.class;
              * @param <U> ells数组中的元素的数据类型。
              * @param cells 数据矩阵
+             * @param defaultClass 当cells 全为空返回的默认类型。
              * @return cells 元素类型
              */
             @SuppressWarnings("unchecked")
-            public static <U> Class<U> getGenericClass(final U cells[][]){
-                Class<U> uclass = (Class<U>) Object.class;
+            public static <U> Class<U> getGenericClass(final U cells[][],Class<U> defaultClass){
+                Class<U> uclass = (Class<U>) defaultClass;
                 if(cells==null)return uclass;
                 List<Class<?>> ll= Arrays.stream(cells).flatMap(Arrays::stream).filter(e->e!=null)
                     .map(e->e.getClass()).distinct().collect(Collectors.toList());
@@ -4426,6 +4846,102 @@ public class XlsFile {
                 return uclass;
             }
             
+            /**
+             * 获得cells数组中的元素的数据类型。
+             * 如果cells中的所有元素都是null,返回Object.class;
+             * @param <U> ells数组中的元素的数据类型。
+             * @param cells 数据矩阵
+             * @param defaultClass 当cells 全为空返回的默认类型。
+             * @return cells 元素类型
+             */
+            @SuppressWarnings("unchecked")
+            public static <U> Class<U> getGenericClass(final U cells[][]){
+                return getGenericClass(cells,(Class<U>)Object.class);
+            }
+            
+            /**
+             * 
+             * @param <U>
+             * @param x
+             * @param y
+             * @return
+             */
+            @SuppressWarnings("unchecked")
+            public static <U extends Number> Class<U> getTargetClass(U x,U y){
+                final var ll = Stream.of(x,y).filter(e->e!=null).map(e->e.getClass()).distinct().collect(Collectors.toList());
+                if(ll.size()==1)return ( Class<U>)(Object)(ll.get(0).getClass());
+                if(ll.size()==2) {
+                    Class<?> c1 = ll.get(0);
+                    Class<?> c2 = ll.get(1);
+                    if(c1==Integer.class)return ( Class<U>)(Object) c2;
+                    else if(c1==Long.class)return ( Class<U>)(Object) c2;
+                    else if(c1==Float.class)return ( Class<U>)(Object) c2;
+                    else return (Class<U>)(Object) c1;
+                }
+                return null;
+            }
+
+            /**
+             * 从xx中提取 (i,j) 位置的数据 
+             * @param <U> 数据元素的类型
+             * @param xx 数据矩阵
+             * @param i 行编号 从0爱是
+             * @param j 列编号从0开始
+             * @param shapex 提取的数据范围
+             * @return U 数据元素
+             */
+            public static <U extends Number> U get(final U[][] xx,final int i,final int j,
+                final Tuple2<Integer,Integer> shapex){
+                if(shapex._1==0||shapex._2==0)return null;
+                return xx[i%shapex._1][j%shapex._2];
+            }
+
+            /**
+             * 返回矩阵的高度与宽度即行数与列数
+             * 
+             * @param aa 待检测的矩阵：过矩阵为null返回一个(0,0)的二元组。
+             * @return (height:行数,width:列数)
+             */
+            public static <U> Tuple2<Integer,Integer> shape(U[][] aa){
+                if(aa==null||aa.length<1)return new Tuple2<>(0,0);
+                final int height = aa.length;
+                int width = 0;
+                for(int i=0;i<height;i++) {
+                    if(aa[i]!=null) {
+                        width = aa[i].length;
+                        break;
+                    }//if
+                }//for
+                return new Tuple2<>(height,width);
+            }
+
+            /**
+             * 返回 shapex,shapey 的最大值
+             * @param <U> X的元素类型
+             * @param <V> Y的元素类型
+             * @param xx 数据矩阵
+             * @param yy 数据矩阵
+             * @return uple2<Integer,Integer>
+             */
+            public static <U,V> Tuple2<Integer,Integer> shapemax(U[][] xx,V[][] yy){
+                final var shapey = shape(xx);
+                final var shapex = shape(yy);
+                final var m = Math.max(shapex._1(),shapey._1());
+                final var n = Math.max(shapex._2(),shapey._2());
+                return new Tuple2<>(m,n);
+            }
+
+            /**
+             * 
+             * @param <T> 列元素类型
+             * @param <U> 结果类型
+             * @param eval 运算器
+             * @return 列的计算器
+             */
+            public static <T, U> Function<KVPair<String, List<T>>, U> summarize(final Function<List<T>, U> eval) {
+                return kvp -> eval.apply(kvp.val());// 累加器
+            }
+
             /**
              * 格式化一个二维矩阵
              * @param mm 二维矩阵
@@ -4458,17 +4974,6 @@ public class XlsFile {
              */
             public static <U> String fmt(final U[][] mm) {
                 return fmt(mm,"\t","\n");
-            }
-
-            /**
-             * 类型转换 强制类型转换:静态类型转换
-             * @param <U> 目标类型的类
-             * @param clazz 目标类型
-             * @return Function<Object,LinkedHashMap<String,U>>
-             */
-            @SuppressWarnings("unchecked")
-            public static <U> Function<Object,LinkedHashMap<String,U>> lhm_cast (final Class<U> clazz){
-                return obj->(LinkedHashMap<String,U>)obj;
             }
 
             /**
@@ -4614,16 +5119,16 @@ public class XlsFile {
             }
 
             /**
-             * 创建  m * n 的二维数组
-             * @param <U> 元素类型
-             * @param ucls 元素类型的class
-             * @param m 行数
-             * @param n 列数
-             * @return U[][]
+             * 生成一个数字序列
+             * @param start 开始元素
+             * @param unary 递增函数
+             * @param n 数据长度
+             * @return Double[] 数字数组
              */
-            @SuppressWarnings("unchecked")
-            public static <U> U[][] newArray(final Class<U> ucls,final int m,final int n){
-                return (U [][] )Array.newInstance(ucls, m,n);
+            public static Double[] numbers(final Double start,
+                final UnaryOperator<Double> unary,final int n) {
+                
+                return Stream.iterate(start, unary).limit(n).toArray(Double[]::new);
             }
 
             /**
@@ -4705,19 +5210,6 @@ public class XlsFile {
                 return oo;
             }
 
-            /**
-             * 生成一个数字序列
-             * @param start 开始元素
-             * @param unary 递增函数
-             * @param n 数据长度
-             * @return Double[] 数字数组
-             */
-            public static Double[] numbers(final Double start,
-                final UnaryOperator<Double> unary,final int n) {
-                
-                return Stream.iterate(start, unary).limit(n).toArray(Double[]::new);
-            }
-            
             /**
              * 生成数据向量
              * @param line 带解析的字符串数据,[\n;] 分隔行,[,\s] 分格列
@@ -4853,49 +5345,6 @@ public class XlsFile {
                 return cc;
             }
             
-            /**
-             * 
-             * @param <U>
-             * @param x
-             * @param y
-             * @return
-             */
-            @SuppressWarnings("unchecked")
-            public static <U extends Number> Class<U> getTargetClass(U x,U y){
-                final var ll = Stream.of(x,y).filter(e->e!=null).map(e->e.getClass()).distinct().collect(Collectors.toList());
-                if(ll.size()==1)return ( Class<U>)(Object)(ll.get(0).getClass());
-                if(ll.size()==2) {
-                    Class<?> c1 = ll.get(0);
-                    Class<?> c2 = ll.get(1);
-                    if(c1==Integer.class)return ( Class<U>)(Object) c2;
-                    else if(c1==Long.class)return ( Class<U>)(Object) c2;
-                    else if(c1==Float.class)return ( Class<U>)(Object) c2;
-                    else return (Class<U>)(Object) c1;
-                }
-                return null;
-            }
-
-            /**
-             * 数字类型转换
-             * @param <U> 目标类型
-             * @param number 数字
-             * @param targetClass 目标类型
-             */
-            @SuppressWarnings("unchecked")
-            public static <U extends Number> U cast(Number number,Class<U>targetClass){
-                if(targetClass==Integer.class)
-                    return (U)(Object)number.intValue();
-                else if(targetClass==Double.class) {
-                    return (U)(Object)number.doubleValue();
-                }else if(targetClass==Float.class) {
-                    return (U)(Object)number.floatValue();
-                }else if(targetClass==Long.class) {
-                    return (U)(Object)number.longValue();
-                }else {
-                    return (U)(Object)number.doubleValue();
-                }
-            }
-
             /**
              * 和的结果
              * @param <U> 元素类型
@@ -5052,7 +5501,7 @@ public class XlsFile {
                 final int n = ruu[0].length; // 列数量
                 
                 if (ruu.length != p) {
-                    System.err.println(MessageFormat.format("左右矩阵的行列不匹配[{0},{1}] x [{1},{2}]，不能做乘法",
+                    System.err.println(MessageFormat.format("左右矩阵的行列不匹配[{0},{1}] x [{2},{3}]，不能做乘法",
                         m,p,ruu.length,n));
                     return null;
                 }
@@ -5209,67 +5658,6 @@ public class XlsFile {
                 }//for
                 
                 return uu;
-            }
-
-            /**
-             * 从xx中提取 (i,j) 位置的数据 
-             * @param <U> 数据元素的类型
-             * @param xx 数据矩阵
-             * @param i 行编号 从0爱是
-             * @param j 列编号从0开始
-             * @param shapex 提取的数据范围
-             * @return U 数据元素
-             */
-            public static <U extends Number> U get(final U[][] xx,final int i,final int j,
-                final Tuple2<Integer,Integer> shapex){
-                if(shapex._1==0||shapex._2==0)return null;
-                return xx[i%shapex._1][j%shapex._2];
-            }
-            
-            /**
-             * 返回 shapex,shapey 的最大值
-             * @param <U> X的元素类型
-             * @param <V> Y的元素类型
-             * @param xx 数据矩阵
-             * @param yy 数据矩阵
-             * @return uple2<Integer,Integer>
-             */
-            public static <U,V> Tuple2<Integer,Integer> shapemax(U[][] xx,V[][] yy){
-                final var shapey = shape(xx);
-                final var shapex = shape(yy);
-                final var m = Math.max(shapex._1(),shapey._1());
-                final var n = Math.max(shapex._2(),shapey._2());
-                return new Tuple2<>(m,n);
-            }
-            
-            /**
-             * 返回矩阵的高度与宽度即行数与列数
-             * 
-             * @param aa 待检测的矩阵：过矩阵为null返回一个(0,0)的二元组。
-             * @return (height:行数,width:列数)
-             */
-            public static <U> Tuple2<Integer,Integer> shape(U[][] aa){
-                if(aa==null||aa.length<1)return new Tuple2<>(0,0);
-                final int height = aa.length;
-                int width = 0;
-                for(int i=0;i<height;i++) {
-                    if(aa[i]!=null) {
-                        width = aa[i].length;
-                        break;
-                    }//if
-                }//for
-                return new Tuple2<>(height,width);
-            }
-            
-            /**
-             * 
-             * @param <T> 列元素类型
-             * @param <U> 结果类型
-             * @param eval 运算器
-             * @return 列的计算器
-             */
-            public static <T, U> Function<KVPair<String, List<T>>, U> summarize(final Function<List<T>, U> eval) {
-                return kvp -> eval.apply(kvp.val());// 累加器
             }
 
             /**
@@ -6451,19 +6839,20 @@ public class XlsFile {
         }
         
         /**
-         * 即选择那些列数据 这就点类似于 select mapper(hh) from name 这样的数据操作。
+         * 选择哪些列数据 <br> 
+         * 这有点类似于 select mapper(hh) from name 这样的数据操作。 <br> 
          * 
-         * 对于有 name 进行标识的excel中的区域给予计算求职。
-         * 由于name标识的区域是一个 数据u框，所以可以通过 在hh 中指定列名的形式对于每个元素a[i,j]应用mapper 函数，进而得到一个新的矩阵 
-         *  c1    c2    c3 :列名         ----> ci    cj    ck  [i,j,k是 一个c1,c2,c3...的子集]
-         *  a11 a12 a13 ：行数据          ----> b1i    b1j    b1k
-         *  a21 a22 a23  ：行数据     ----> b2i    b2j    b2k
-         *  ... ... ...             ----> ... ... ...    
+         * 对于有 name 进行标识的excel中的区域给予计算求求职  <br> 
+         * 由于name标识的区域是一个 数据框，所以可以通过 在 hh 中指定列名的形式对于每个元素a[i,j]应用mapper 函数，进而得到一个新的矩阵  <br>  
+         *  c1   c2   c3  :列名          ----> ci   cj   ck   [i,j,k是 一个c1,c2,c3...的子集]  <br> 
+         *  a11  a12  a13 :行数据     ----> b1i  b1j  b1k  <br> 
+         *  a21  a22  a23 :行数据     ----> b2i  b2j  b2k  <br> 
+         *  ... ... ...         ----> ...   ... ...  <br> 
          * 
          * @param sht sheet 名
          * @param rangeName 区域名称
          * @param hh 表头名称
-         * @param mapper 元素处理函数
+         * @param maper 数据变换操作: o->t 完成 aij->bij的变换
          * @return 新数据矩阵
          */
         public <T> DataMatrix<T> evaluate(Sheet sht,String rangeName,List<String> hh,Function<Object,T> mapper) {
@@ -6472,17 +6861,19 @@ public class XlsFile {
         }
         
         /**
-         * 即选择那些列数据 这就点类似于 select mapper(hh) from name 这样的数据操作。
-         *   对于有 name 进行标识的excel中的区域给予计算求职。
-         * 由于name标识的区域是一个 数据u框，所以可以通过 在hh 中指定列名的形式对于每个元素a[i,j]应用mapper 函数，进而得到一个新的矩阵 
-         *  c1    c2    c3 :列名         ----> ci    cj    ck  [i,j,k是 一个c1,c2,c3...的子集]
-         *  a11 a12 a13 ：行数据          ----> b1i    b1j    b1k
-         *  a21 a22 a23  ：行数据     ----> b2i    b2j    b2k
-         *  ... ... ...             ----> ... ... ...    
+         * 选择哪些列数据 <br> 
+         * 这有点类似于 select mapper(hh) from name 这样的数据操作。 <br> 
+         * 
+         * 对于有 name 进行标识的excel中的区域给予计算求求职  <br> 
+         * 由于name标识的区域是一个 数据框，所以可以通过 在 hh 中指定列名的形式对于每个元素a[i,j]应用mapper 函数，进而得到一个新的矩阵  <br>  
+         *  c1   c2   c3  :列名          ----> ci   cj   ck   [i,j,k是 一个c1,c2,c3...的子集]  <br> 
+         *  a11  a12  a13 :行数据     ----> b1i  b1j  b1k  <br> 
+         *  a21  a22  a23 :行数据     ----> b2i  b2j  b2k  <br> 
+         *  ... ... ...         ----> ...   ... ...  <br> 
          * 
          * @param sht 表单名
          * @param rangeName 区域名称
-         * @param mapper 元素处理函数
+         * @param maper 数据变换操作: o->t 完成 aij->bij的变换
          * @return 新数据矩阵
          */
         public <T> DataMatrix<T> evaluate(Sheet sht,String rangeName,Function<Object,T> mapper) {
@@ -6490,16 +6881,19 @@ public class XlsFile {
         }
         
         /**
-         * 对于有 name 进行标识的excel中的区域给予计算求职。
-         * 由于name标识的区域是一个 数据u框，所以可以通过 在hh 中指定列名的形式对于每个元素a[i,j]应用mapper 函数，进而得到一个新的矩阵 
-         *  c1    c2    c3 :列名         ----> ci    cj    ck  [i,j,k是 一个c1,c2,c3...的子集]
-         *  a11 a12 a13 ：行数据          ----> b1i    b1j    b1k
-         *  a21 a22 a23  ：行数据     ----> b2i    b2j    b2k
-         *  ... ... ...             ----> ... ... ...    
+         * 选择哪些列数据 <br> 
+         * 这有点类似于 select mapper(hh) from name 这样的数据操作。 <br> 
+         * 
+         * 对于有 name 进行标识的excel中的区域给予计算求求职  <br> 
+         * 由于name标识的区域是一个 数据框，所以可以通过 在 hh 中指定列名的形式对于每个元素a[i,j]应用mapper 函数，进而得到一个新的矩阵  <br>  
+         *  c1   c2   c3  :列名          ----> ci   cj   ck   [i,j,k是 一个c1,c2,c3...的子集]  <br> 
+         *  a11  a12  a13 :行数据     ----> b1i  b1j  b1k  <br> 
+         *  a21  a22  a23 :行数据     ----> b2i  b2j  b2k  <br> 
+         *  ... ... ...         ----> ...   ... ...  <br> 
          *  
          * @param name 区域全名称比如sheet2!A1:B100
          * @param hh 列名序列,即选择那些列数据 这就点类似于 select mapper(hh) from name 这样的数据操作。
-         * @param mapper 元素变换
+         * @param maper 数据变换操作: o->t 完成 aij->bij的变换
          * @return 重新计算后的新的数据矩阵
          */
         public <T> DataMatrix<T> evaluate(String name,List<String> hh,Function<Object,T> mapper) {
@@ -6515,16 +6909,19 @@ public class XlsFile {
         }
         
         /**
-         * 对于有 name 进行标识的excel中的区域给予计算求职。
-         * 由于name标识的区域是一个 数据u框，所以可以通过 在hh 中指定列名的形式对于每个元素a[i,j]应用mapper 函数，进而得到一个新的矩阵 
-         *  c1    c2    c3 :列名         ----> ci    cj    ck  [i,j,k是 一个c1,c2,c3...的子集]
-         *  a11 a12 a13 ：行数据          ----> b1i    b1j    b1k
-         *  a21 a22 a23  ：行数据     ----> b2i    b2j    b2k
-         *  ... ... ...             ----> ... ... ...    
+         * 选择哪些列数据 <br> 
+         * 这有点类似于 select mapper(hh) from name 这样的数据操作。 <br> 
+         * 
+         * 对于有 name 进行标识的excel中的区域给予计算求求职  <br> 
+         * 由于name标识的区域是一个 数据框，所以可以通过 在 hh 中指定列名的形式对于每个元素a[i,j]应用mapper 函数，进而得到一个新的矩阵  <br>  
+         *  c1   c2   c3  :列名          ----> ci   cj   ck   [i,j,k是 一个c1,c2,c3...的子集]  <br> 
+         *  a11  a12  a13 :行数据     ----> b1i  b1j  b1k  <br> 
+         *  a21  a22  a23 :行数据     ----> b2i  b2j  b2k  <br> 
+         *  ... ... ...         ----> ...   ... ...  <br> 
          *  
          * @param name 区域全名称比如sheet2!A1:B100
          * @param hh 区域全名称比如sheet2!A1:B100
-         * @param mapper 元素变换
+         * @param maper 数据变换操作: o->t 完成 aij->bij的变换
          * @return 重新计算后的新的数据矩阵
          */
         public <T> DataMatrix<T> evaluate(String name,Function<Object,T> mapper) {
@@ -6532,17 +6929,20 @@ public class XlsFile {
         }
         
         /**
+         * 选择哪些列数据 <br> 
+         * 这有点类似于 select mapper(hh) from name 这样的数据操作。 <br> 
          * 
-         * 对于有 name 进行标识的excel中的区域给予计算求职。
-         * 由于name标识的区域是一个 数据u框，所以可以通过 在hh 中指定列名的形式对于每个元素a[i,j]应用mapper 函数，进而得到一个新的矩阵 
-         *  c1    c2    c3 :列名         ----> ci    cj    ck  [i,j,k是 一个c1,c2,c3...的子集]
-         *  a11 a12 a13 ：行数据          ----> b1i    b1j    b1k
-         *  a21 a22 a23  ：行数据     ----> b2i    b2j    b2k
-         *  ... ... ...             ----> ... ... ...    
+         * 对于有 name 进行标识的excel中的区域给予计算求求职  <br> 
+         * 由于name标识的区域是一个 数据框，所以可以通过 在 hh 中指定列名的形式对于每个元素a[i,j]应用mapper 函数，进而得到一个新的矩阵  <br>  
+         *  c1   c2   c3  :列名          ----> ci   cj   ck   [i,j,k是 一个c1,c2,c3...的子集]  <br> 
+         *  a11  a12  a13 :行数据     ----> b1i  b1j  b1k  <br> 
+         *  a21  a22  a23 :行数据     ----> b2i  b2j  b2k  <br> 
+         *  ... ... ...         ----> ...   ... ...  <br> 
          * 
          * @param i0,i1(inclusive) 行范围 ,从 0开始,包括i1
          * @param j0,j1(inclusive) 列范围,从 0开始,包括 j1
          * @param sht 表单数据
+         * @param maper 数据变换操作: o->t 完成 aij->bij的变换
          * @param hh null,表示数据中包含表头,第一行就是表头
          * @return 新数据矩阵
          */
@@ -6552,16 +6952,20 @@ public class XlsFile {
         }
         
         /**
-         *  对于有 name 进行标识的excel中的区域给予计算求职。
-         * 由于name标识的区域是一个 数据u框，所以可以通过 在hh 中指定列名的形式对于每个元素a[i,j]应用mapper 函数，进而得到一个新的矩阵 
-         *  c1    c2    c3 :列名         ----> ci    cj    ck  [i,j,k是 一个c1,c2,c3...的子集]
-         *  a11 a12 a13 ：行数据          ----> b1i    b1j    b1k
-         *  a21 a22 a23  ：行数据     ----> b2i    b2j    b2k
-         *  ... ... ...             ----> ... ... ...    
+         * 选择哪些列数据 <br> 
+         * 这有点类似于 select mapper(hh) from name 这样的数据操作。 <br> 
+         * 
+         * 对于有 name 进行标识的excel中的区域给予计算求求职  <br> 
+         * 由于name标识的区域是一个 数据框，所以可以通过 在 hh 中指定列名的形式对于每个元素a[i,j]应用mapper 函数，进而得到一个新的矩阵  <br>  
+         *  c1   c2   c3  :列名          ----> ci   cj   ck   [i,j,k是 一个c1,c2,c3...的子集]  <br> 
+         *  a11  a12  a13 :行数据     ----> b1i  b1j  b1k  <br> 
+         *  a21  a22  a23 :行数据     ----> b2i  b2j  b2k  <br> 
+         *  ... ... ...         ----> ...   ... ...  <br> 
          * 
          * @param i0,i1(inclusive) 行范围 ,从 0开始,包括i1
          * @param j0,j1(inclusive) 列范围,从 0开始,包括 j1
          * @param sht 表单数据
+         * @param maper 数据变换操作: o->t 完成 aij->bij的变换
          * @param hh null,表示数据中包含表头,第一行就是表头
          * @return excel 范围
          */

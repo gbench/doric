@@ -6299,16 +6299,35 @@ public class LittleTree {
         }
         
         /**
-         * 获取并变换设置。相当于 get&set:
+         * 当且仅当key值不存在的才给予:compute,否则直接返回键值，属于名称来源于 Java Map
+         * compute 就是获取并变换设置。相当于 get&set:
          * U u = get(key,t2u)
          * set(key,u);
          * 
-         * @param key
-         * @param t2u
+         * @param idx 键名索引
+         * @param t2u 把T类型的元素转换成U类型键值
          * @return 值变换后的数据。 U类型
          */
-        public default <T,U> U compute(final String key,final Function<T,U> t2u){
-            final U u = this.get(key, t2u);
+        public default <T,U> U computeIfAbsent(final Integer idx,final Function<T,U> t2u) {
+            final var key = this.idx2key(idx);
+            return this.computeIfAbsent(key, t2u);
+        }
+
+        /**
+         * 当且仅当key值不存在的才给予:compute,否则直接返回键值，属于名称来源于 Java Map
+         * compute 就是获取并变换设置。相当于 get&set:
+         * U u = get(key,t2u)
+         * set(key,u);
+         * 
+         * @param key 字段键名
+         * @param mapper 把T类型的元素转换成U类型键值
+         * @return 值变换后的数据。 U类型
+         */
+        public default <T,U> U computeIfAbsent(final String key,final Function<T,U> mapper){
+            @SuppressWarnings("unchecked")
+            final var o = (U)this.get(key);
+            if(o!=null)return o;
+            final U u = this.get(key, mapper);
             this.set(key, u);
             return u;
         }
@@ -6316,18 +6335,39 @@ public class LittleTree {
         /**
          * 当且仅当key值不存在的才给予:compute,否则直接返回键值，属于名称来源于 Java Map
          * compute 就是获取并变换设置。相当于 get&set:
-         * U u = get(key,t2u)
+         * U u = mapper.apply(idx,get(key))
          * set(key,u);
          * 
-         * @param key
-         * @param t2u
+         * @param key 键名
+         * @param tv2u 键值引用(key,value)->u
          * @return 值变换后的数据。 U类型
          */
-        public default <T,U> U computeIfAbsent(final String key,final Function<T,U> t2u){
+        public default <T,U> U computeIfAbsent(final Integer idx,final BiFunction<Integer,T,U> mapper){
+            @SuppressWarnings("unchecked")
+            final var o = (U)this.get(this.idx2key(idx));
+            if(o!=null)return o;
+            @SuppressWarnings("unchecked")
+            final U u = mapper.apply(idx,(T)o);
+            this.set(idx, u);
+            return u;
+        }
+
+        /**
+         * 当且仅当key值不存在的才给予:compute,否则直接返回键值，属于名称来源于 Java Map
+         * compute 就是获取并变换设置。相当于 get&set:
+         * U u = mapper.apply(key,get(key,t2u))
+         * set(key,u);
+         * 
+         * @param key 键名
+         * @param tv2u 键值引用(key,value)->u
+         * @return 值变换后的数据。 U类型
+         */
+        public default <T,U> U computeIfAbsent(final String key,final BiFunction<String,T,U> mapper){
             @SuppressWarnings("unchecked")
             final var o = (U)this.get(key);
             if(o!=null)return o;
-            final U u = this.get(key, t2u);
+            @SuppressWarnings("unchecked")
+            final U u = mapper.apply(key,(T)(Object)o);
             this.set(key, u);
             return u;
         }
@@ -6348,18 +6388,51 @@ public class LittleTree {
         }
         
         /**
-         * 当且仅当key值不存在的才给予:compute,否则直接返回键值，属于名称来源于 Java Map
-         * compute 就是获取并变换设置。相当于 get&set:
+         * 获取并变换设置。相当于 get&set:
          * U u = get(key,t2u)
          * set(key,u);
          * 
-         * @param idx 键名索引
+         * @param key
          * @param t2u
          * @return 值变换后的数据。 U类型
          */
-        public default <T,U> U computeIfAbsent(final Integer idx,final Function<T,U> t2u) {
-            final var key = this.idx2key(idx);
-            return this.computeIfAbsent(key, t2u);
+        public default <T,U> U compute(final String key,final Function<T,U> t2u){
+            final U u = this.get(key, t2u);
+            this.set(key, u);
+            return u;
+        }
+
+        /**
+         * 获取并变换设置。相当于 相当于 get&set:
+         * U u = mapper.apply(key, (T)get(key));
+         * set(key,u);
+         * @param idx 键名索引
+         * @param mapper 值变换函数
+         * @return 值变换后的数据。
+         */
+        public default <T,U> U compute(final Integer idx,final BiFunction<Integer,T,U> mapper){
+            @SuppressWarnings("unchecked")
+            final T t = (T)this.get(this.idx2key(idx));
+            final U u = mapper.apply(idx,t);
+            this.set(idx, u);
+            return u;
+        }
+
+        /**
+         * k->t->u
+         * 获取并变换设置。相当于 相当于 get&set:
+         * U u = mapper.apply(key, (T)get(key));
+         * set(key,u);
+         * @param idx 键名索引
+         * @param t2u 值变换函数
+         * @return 值变换后的数据。
+         */
+        public default <T,U> U compute(final String key,final BiFunction<String,T,U> mapper){
+            @SuppressWarnings("unchecked")
+            final T t = (T)this.get(key);
+            final U u = mapper.apply(key,t);
+            this.set(key, u);
+            return u;
         }
         
         /**
@@ -8631,6 +8704,8 @@ public class LittleTree {
           * 主要用途就是 完成 IRecord 向 DataMatrix的转换，但是为了保证DataMatrix 与IRecord 的独立。而设置这个函数。比如 <br>
           * var dm = new DataMatrix<> (rec.rowS(),Integer.class); 就构造了一个 DataMatrix 对象。<br>
           * 
+          * @param <T> 值类型
+          * @param clazz 值类型class
           * @return 生成一个hashmap 的集合
           */
          @SuppressWarnings("unchecked")
@@ -8647,6 +8722,8 @@ public class LittleTree {
           * 主要用途就是 完成 IRecord 向 DataMatrix的转换，但是为了保证DataMatrix 与IRecord 的独立。而设置这个函数。比如 <b>
           * var dm = new DataMatrix<> (rec.rowS(),Integer.class); 就构造了一个 DataMatrix 对象。<br>
           * 
+          * @param <T> 值类型
+          * @param clazz 值类型class
           * @return 生成一个hashmap 的集合
           */
          @SuppressWarnings("unchecked")
@@ -8665,7 +8742,7 @@ public class LittleTree {
           * 
           * @return 生成一个hashmap 的集合<br>
           */
-         public default <T> List<Map<String,Object>> rowL() {
+         public default List<Map<String,Object>> rowL() {
              return Arrays.asList(this.toMap());
          }
 
@@ -8688,18 +8765,19 @@ public class LittleTree {
          *  
          * @param mapper 元素类型格式化函数,类型为， (key:String,value:Object)->new_value
          * @param hh列名序列,若为空则采用EXCEL格式的列名称(0:A,1:B,...),如果列表不够也采用excelname给与填充区别只不过添加了一个前缀"_"
+         * @return 返回以hh值为列名的行列表
          */
-        public default <T> List<IRecord> rows(final BiFunction<String,Object,T> mapper,final List<String>hh) {
+        public default <T> List<IRecord> rows(final BiFunction<String,Object,T> mapper,final List<String> hh) {
             final var shape = this.shape();// 提取图形结构
-            final var rows = new ArrayList<IRecord>(shape._1());
+            final var rows = new ArrayList<IRecord>(shape._1());// 提取行数记录行数
             final List<String> final_hh = hh == null
-                ? LIST(Stream.iterate(0, i->i+1).limit(shape._2()).map(LittleTree::excelname))
+                ? LIST(Stream.iterate(0, i->i+1).limit(shape._2()).map(LittleTree::excelname))// 生成excel列名
                 : hh;
             if(hh!=null)Stream.iterate(hh.size(),i->i<shape._2(),i->i+1).forEach(i->{
                 final_hh.add(excelname(i));
             });
             final var keys = this.keys().toArray(String[]::new);
-            for(int j=0;j<shape._2();j++) {
+            for(int j=0;j<shape._2();j++) {// 列号
                 final var col = this.lla(keys[j],e->e);// 提取name列
                 if(col==null)continue;
                 final var size = col.size();// 列大小
@@ -8729,16 +8807,43 @@ public class LittleTree {
          *  A:b B:2 C:4 D:6 E:61 <br>
          *  A:c B:3 C:6 D:9 E:91 <br>
          *  A:a B:1 C:10    D:3 E:31 <br>
-         *  
+         * 
+         * @param <T> 转换mapper的 结果类型
+         * @param mapper 元素类型格式化函数,类型为， (key:String,value:Object)->new_value
+         * hh列名序列,默认为keys
+         * @return 返回以key值为列名的行列表
          */
-        public default <T> List<IRecord> rows() {
+        public default <T> List<IRecord> rows(final BiFunction<String,Object,T> mapper) {
+            return rows(mapper,this.keys());
+        }
+        
+        /**
+         * DataFrame 类型的数据方法,所谓DataFrame 是指键值对儿中的值为List的IRecord(kvs)<br>
+         * 返回行列表:<br>
+         *  final var dfm = REC( <br>
+         *    "A",L("a","b","c"), // 第一列 <br>
+         *    "B",L(1,2,3), // 第二列 <br>
+         *    "C",A(2,4,6,10),// 第三列 <br>
+         *    "D",REC(0,3,1,6,2,9),// 第四列 <br>
+         *    "E",REC(0,31,1,61,2,91).toMap()// 第五列 <br>
+         *  );// dfm <br>
+         *  
+         *  返回:<br>
+         *  A:a B:1 C:2 D:3 E:31 <br>
+         *  A:b B:2 C:4 D:6 E:61 <br>
+         *  A:c B:3 C:6 D:9 E:91 <br>
+         *  A:a B:1 C:10    D:3 E:31 <br>
+         *  
+         *  @return 返回以key值为列名的行列表
+         */
+        public default List<IRecord> rows() {
             return this.rows((key,value)->value,this.keys());
         }
         
         /**
          * 第rowid 所在的行记录
          * @param rowid 行号索引：从0开始
-         * @return 行记录
+         * @return rowid所标记行记录
          */
         public default IRecord row(int rowid) {
             final var rows = this.rows((name,e)->e,this.keys());
@@ -8751,6 +8856,7 @@ public class LittleTree {
          * 
          * @param idx 列名索引，从0开始
          * @param t2u 列值转换函数:t->u
+         * @return idx 所标识的列(key)的元素集合
          */
         public default List<Object> column(Integer idx){
             return this.lla(idx, e->e);
@@ -8763,6 +8869,7 @@ public class LittleTree {
          * @param <U> 返回值变换后的列的类型
          * @param idx 列名索引，从0开始
          * @param t2u 列值转换函数:t->u
+         * @return idx 所标识的列(key)的经过t2u变换后的元素集合
          */
         public default <T,U> List<U> column(Integer idx,Function<T,U>t2u){
             return this.lla(idx, t2u);
@@ -8777,6 +8884,7 @@ public class LittleTree {
          * @param <T> 列的元数据类型
          * @param colName 列名
          * @param targetClass 列的值类型类
+         * @return idx 所标识的列(key)的元素集合(强制姐转换为T类型)
          */
         @SuppressWarnings("unchecked")
         public default <T> List<T> column(String colName,Class<T> targetClass){
@@ -8790,6 +8898,7 @@ public class LittleTree {
          * @param <U> 返回值变换后的列的类型
          * @param columnName 列名：这是对lla的别名
          * @param t2u 列值转换函数 :t->u
+         * @return columnName 所标识的列(key)的经过t2u变换后的元素集合
          */
         public default <T,U> List<U> column(String columnName,Function<T,U>t2u){
             return this.lla(columnName, t2u);
@@ -9044,16 +9153,15 @@ public class LittleTree {
         /**
          * Unpivot a DataFrame from wide to long format, optionally leaving identifiers set <br>
          * 
-         * @param mapper
-         * @param hh
+         * @param mapper 元素类型格式化函数,类型为， (key:String,value:Object)->new_value
+         * @param hh 列名序列,若为空则采用EXCEL格式的列名称(0:A,1:B,...),如果列表不够也采用excelname给与填充区别只不过添加了一个前缀"_"
          * @param id_vars Column(s) to use as identifier variables.
          * @param value_vars Column(s) to unpivot. If not specified, uses all columns that are not set as id_vars.
-         * @param var_namescalarName to use for the ‘variable’ column. If null use  ‘variable’.
+         * @param var_name scalarName to use for the ‘variable’ column. If null use  ‘variable’.
          * @param value_name Name to use for the ‘value’ column.
          * @return Unpivoted DataFrame.
          */
-        public default IRecord melt(
-            final List<String> id_vars ,final List<String> value_vars ,
+        public default IRecord melt( final List<String> id_vars ,final List<String> value_vars ,
             final String var_name,final String value_name ){
             return _melt((s,e)->e,null,id_vars,value_vars,var_name, value_name);
         }
@@ -9063,16 +9171,16 @@ public class LittleTree {
          * 术语来源于：R reshape, 接口 原型来源于 pandas
          * Unpivot a DataFrame from wide to long format, optionally leaving identifiers set <br>
          * 
-         * @param mapper
-         * @param hh
+         * @param mapper 元素类型格式化函数,类型为， (key:String,value:Object)->new_value
+         * @param hh 列名序列,若为空则采用EXCEL格式的列名称(0:A,1:B,...),如果列表不够也采用excelname给与填充区别只不过添加了一个前缀"_"
          * @param id_vars Column(s) to use as identifier variables.
          * @param value_vars Column(s) to unpivot. If not specified, uses all columns that are not set as id_vars.
-         * @param var_namescalarName to use for the ‘variable’ column. If null use  ‘variable’.
+         * @param var_names calarName to use for the ‘variable’ column. If null use  ‘variable’.
          * @param value_name Name to use for the ‘value’ column.
          * @return Unpivoted DataFrame.
          */
-        public default IRecord melt(
-            final List<String> id_vars ,final List<String> value_vars){
+        public default IRecord melt(final List<String> id_vars ,final List<String> value_vars){
+            
             return _melt((s,e)->e,null,id_vars,value_vars,"variable","value");
         }
         
@@ -9081,50 +9189,75 @@ public class LittleTree {
          * 术语来源于：R reshape, 接口 原型来源于 pandas
          * Unpivot a DataFrame from wide to long format, optionally leaving identifiers set <br>
          * 
-         * @param mapper
-         * @param hh
-         * @param id_vars Column(s) to use as identifier variables.
-         * @param value_vars Column(s) to unpivot. If not specified, uses all columns that are not set as id_vars.
-         * @param var_namescalarName to use for the ‘variable’ column. If null use  ‘variable’.
+         * @param <T> mapper 的返回结果类型：即中间结果 (k:String,o:Object)->t
+         * @param mapper 元素类型格式化函数,类型为， (key:String,value:Object)->new_value
+         * @param hh 列名序列,若为空则采用EXCEL格式的列名称(0:A,1:B,...),如果列表不够也采用excelname给与填充区别只不过添加了一个前缀"_"
+         * 
+         * @param id_vars 标识变量集合 Column(s) to use as identifier variables.
+         * @param value_vars 值变量集合 Column(s) to unpivot. If not specified, uses all columns that are not set as id_vars.
+         * @param var_name 窄长scalarName to use for the ‘variable’ column. If null use  ‘variable’.
          * @param value_name Name to use for the ‘value’ column.
-         * @return Unpivoted DataFrame.
+         * @return Unpivoted DataFrame. 窄长型数据
          */
-        public default <T> List<IRecord> melt2recs(
-            final BiFunction<String, Object, T> mapper,
-            final List<String> hh,
-            final List<String> id_vars ,final List<String> value_vars ,
-            final String var_name,final String value_name ) {
+        public default <T> List<IRecord> melt2recs( final BiFunction<String, Object, T> mapper,final List<String> hh,
+            final List<String> id_vars, final List<String> value_vars, final String var_name,final String value_name ) {
             
-            final var final_id_vars = id_vars;// identifier variables names
-            final var final_value_vars = value_vars;// variables names
-            final var final_var_name = var_name;// 
-            final var final_value_name = value_name;
-           
+            final var final_id_vars = id_vars;// identifier variables names,id标识变量名称集合
+            final var final_value_vars = value_vars;// variables names,即值变量名称集合 
+            final var final_var_name = var_name;// 新生成的值变量字段名称:分组名称
+            final var final_value_name = value_name;// 新生成的值变量字段名称
+            final var idvars = final_id_vars.stream().toArray(String[]::new);// 标识字段名称。
             
-            final var idvars = final_id_vars.stream().toArray(String[]::new);
-            final var items = this.rows(mapper, hh).stream().flatMap(rec->{// DataFrame  的行记录名称
-                final var proto = rec.filter(idvars);// 制作原型数据
-                return final_value_vars.stream().map(value_var->{
-                    final var item = proto.duplicate();
-                    item.add(final_var_name,value_var);
-                    item.add(final_value_name,rec.get(value_var));
-                    return item;
-                });
-            }).collect(Collectors.toList());
+            /**
+             * 对于宽结构的数据矩阵：我们一般把它视为一个列向量集合。(v1,v2,v3,...). 由于 每个向量vi 都表示数据(总体)的一种特定属性，拥有一定数据范围
+             * 有时又把它称为变量variable，即数据表格中的列在数据分析与操作中被视为变量variable
+             * 
+             * 在具体应用中每个变量vi 的意义是不相同的,它们又可以分为两类 {idvars:id标识向量集合} 和 {value_vars:value向量集合} 来表达层级结构，因此可以
+             * 根据idvars 和value_vars 来构造出层级结构。比如：
+             * 一条数据记录：(id11:idvar, id12:idvar2 ,value11:value_var1, value12:value_var2,value13:value_var3) 就可以表示为
+             * 以下的树形结构（层级结构)
+             *    (id11:idvar1,id12:idvar2)                      张:姓氏, 三:名字 
+             *         |---- value11: value_var1                        |---- 18601690610 电话 
+             *         |---- vlaue12: value_var2                        |---- gbench@sina.com 邮箱 
+             *         |---- value13: value_var3                        |---- 上海徐家汇法华镇路 地址
+             * 分析上述结构，就会发现 这其实是一种融合操作：value_vars 集合的变量的名称给汇集成一个新的变量/列var_name, 并把相对的值汇聚成 value_name变量/列
+             *  idvar1    idvar2    var_name    value_name        姓    名    属性    属性值
+             *  value11 vlaue12  value_var1   value11             张    三     电话   18601690610 
+             *  value11 vlaue12  value_var2   vlaue12             张    三     邮箱    gbench@sina.com
+             *  value11 vlaue12  value_var3   vlaue13             张    三     地址   上海徐家汇法华镇路
+             * 这是把短宽型1x5的数据 给 转换成 窄长型3x4的数据的 变换方式。
+             */
             
-            return items;
+            final var items = this.rows(mapper, hh).stream().flatMap( // DataFrame  的行记录名称
+                wide_rec->{// 待进行分解的短宽型数据记录
+                    // 采用原型法来构架窄记录，
+                    final var proto = wide_rec.filter(idvars);// 制作原型数据, 即长窄型数据的前导部分的 idvars部分的数据：前导记录
+                    final var value_vars_left = new AtomicInteger(value_vars.size());// 剩余尾槌的value_vars数量
+                    return final_value_vars.stream().map(value_var->{// 依次把属性字段信息 value_vars 加入到  protod额后半段中
+                        final var narrow_item = value_vars_left.getAndDecrement() != 1 // 当剩下有多个时候用副本否则直接使用原型，避免浪费
+                        ?   proto.duplicate() // 窄长属性记录的前半段：标识变量部分。采用对proto的副本进行追加的方式来构造
+                        :   proto;// 最后一条记录使用原型 
+                        narrow_item.add(final_var_name, value_var);// 把值属性名value_var增加到final_var_name 列名下
+                        narrow_item.add(final_value_name, wide_rec.get(value_var));// 把值属性value_var的值增加到final_value_name 列名下
+                        return narrow_item;// 返回新生成窄记录
+                    });// return 依据wide_rec新生成窄记录 narrow_item 集合：这是一对多的变换
+                }).collect(Collectors.toList());// flatMap
+            
+            return items;// 窄长数据的集合
         }
         
         /**
+         * 一般用于内部调用
          * DataFrame 类型的数据方法,所谓DataFrame 是指键值对儿中的值为List的IRecord(kvs)<br>
          * 术语来源于：R reshape, 接口 原型来源于 pandas
          * 
          * Unpivot a DataFrame from wide to long format, optionally leaving identifiers set <br>
-         * @param mapper
-         * @param hh
+         * @param mapper 元素类型格式化函数,类型为， (key:String,value:Object)->new_value
+         * @param hh 列名序列,若为空则采用EXCEL格式的列名称(0:A,1:B,...),如果列表不够也采用excelname给与填充区别只不过添加了一个前缀"_"
+         * 
          * @param id_vars Column(s) to use as identifier variables.
          * @param value_vars Column(s) to unpivot. If not specified, uses all columns that are not set as id_vars.
-         * @param var_namescalarName to use for the ‘variable’ column. If null use  ‘variable’.
+         * @param var_name scalarName to use for the ‘variable’ column. If null use  ‘variable’.
          * @param value_name Name to use for the ‘value’ column.
          * @return Unpivoted DataFrame.
          */
@@ -9139,7 +9272,7 @@ public class LittleTree {
                 item.kvs().forEach(p->{
                     dfm.computeIfAbsent(p.key(), _k->new LinkedList<Object>())
                     .add(p.value());
-                });
+                });// item.kvs()
             });// forEach
             
             return dfm;

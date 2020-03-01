@@ -1,5 +1,6 @@
 package gbench.sandbox.tushare;
 
+import org.junit.jupiter.api.Test;
 import static gbench.common.client.AbstractHttpClient.*;
 import static gbench.common.tree.LittleTree.IRecord.*;
 import static gbench.common.tree.LittleTree.*;
@@ -18,7 +19,8 @@ public class ApiOfDaily extends TuShareApp{
      * 返回
      * @param args app的参数
      */
-    public static void main(String args[]) {
+    @Test
+    public void foo() {
         tushare.asyncInvoke("daily", 
             r("ts_code","000001.SZ", "start_date","20180701", "end_date","20190221"),
             smx->{
@@ -41,5 +43,12 @@ public class ApiOfDaily extends TuShareApp{
                 
                 System.out.println(tt.toString(frt(2)));
             });// smx
+        
+        try {
+            Thread.sleep(20000);
+        } catch (InterruptedException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
     }
 }
